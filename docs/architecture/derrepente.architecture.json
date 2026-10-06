@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Plataforma de afluencia turística · arquitectura y despliegue",
+    "output": "derrepente.architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/juancxdev/rio-derrepente",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "97eb93c53a9601c048a76db9412f8962155cb5f6"
+    },
+    "views": [
+      { "id": "operational-read", "label": "Lectura operativa", "focus": ["operators", "frontend", "api", "postgres", "open_meteo"], "note": "Consulta del dashboard, clima y predicciones persistidas para hoy y mañana." },
+      { "id": "async-training", "label": "Registro y predicción asíncrona", "focus": ["frontend", "api", "rabbit", "ml", "postgres", "open_meteo"], "note": "El registro se persiste primero y luego activa el procesamiento del microservicio ML." },
+      { "id": "deployment", "label": "Despliegue continuo", "focus": ["github", "actions", "ec2", "frontend", "api", "postgres"], "note": "Un push a main valida el código, entra por SSH a EC2 y conserva PostgreSQL." }
+    ]
+  },
+  "components": [
+    { "id": "operators", "type": "external", "label": "Encargados y comercios", "sublabel": "Navegador web", "pos": [40, 330], "size": [170, 68] },
+    { "id": "github", "type": "external", "label": "GitHub", "sublabel": "Repositorio main", "pos": [40, 110], "size": [150, 64], "tag": "control de código" },
+    { "id": "actions", "type": "cloud", "label": "GitHub Actions", "sublabel": "Tests + SSH deploy", "pos": [270, 110], "size": [160, 64], "tag": "CI/CD", "sources": [{ "path": ".github/workflows/deploy-ec2.yml", "line": 1, "end_line": 57, "label": "workflow" }] },
+    { "id": "ec2", "type": "cloud", "label": "Amazon EC2", "sublabel": "us-east-2 · Docker Compose", "pos": [500, 110], "size": [190, 64], "tag": "t3.micro", "sources": [{ "path": "docker-compose.yml", "line": 1, "end_line": 88, "label": "compose" }, { "path": "scripts/deploy.sh", "line": 1, "end_line": 13, "label": "deploy script" }] },
+    { "id": "frontend", "type": "frontend", "label": "Dashboard React", "sublabel": "Nginx :3000", "pos": [270, 330], "size": [160, 68], "sources": [{ "path": "frontend/src/App.tsx", "line": 1, "end_line": 39, "label": "dashboard" }, { "path": "frontend/nginx.conf", "line": 1, "label": "proxy" }] },
+    { "id": "api", "type": "backend", "label": "API Go / Fiber", "sublabel": "Hexagonal · DDD · :8080", "pos": [500, 330], "size": [180, 68], "tag": "baseline-1.0", "sources": [{ "path": "backend/cmd/api/main.go", "line": 30, "end_line": 48, "label": "composition root" }, { "path": "backend/internal/adapters/http/api.go", "line": 45, "end_line": 53, "label": "routes" }] },
+    { "id": "postgres", "type": "database", "label": "PostgreSQL", "sublabel": "Datos + predicciones", "pos": [760, 330], "size": [170, 68], "tag": "volumen persistente", "sources": [{ "path": "docker-compose.yml", "line": 2, "end_line": 14, "label": "database" }, { "path": "db/migrations/001_initial.up.sql", "line": 1, "end_line": 69, "label": "schema" }] },
+    { "id": "rabbit", "type": "messagebus", "label": "RabbitMQ", "sublabel": "visit-record-created", "pos": [760, 500], "size": [175, 68], "sources": [{ "path": "backend/internal/adapters/rabbitmq/publisher.go", "line": 1, "end_line": 57, "label": "publisher" }] },
+    { "id": "ml", "type": "backend", "label": "Microservicio ML", "sublabel": "Python / FastAPI + worker", "pos": [1010, 500], "size": [190, 68], "tag": "XGBoost futuro", "sources": [{ "path": "ml-service/app/infrastructure/worker.py", "line": 1, "end_line": 34, "label": "worker" }, { "path": "ml-service/app/application/service.py", "line": 1, "end_line": 14, "label": "prediction" }] },
+    { "id": "open_meteo", "type": "external", "label": "Open-Meteo", "sublabel": "Pronóstico meteorológico", "pos": [1010, 270], "size": [190, 68], "sources": [{ "path": "backend/internal/adapters/weather/open_meteo.go", "line": 43, "end_line": 91, "label": "weather adapter" }] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "AWS · us-east-2", "wraps": ["ec2", "frontend", "api", "postgres", "rabbit", "ml"], "pad": 24 },
+    { "kind": "security-group", "label": "Security Group · SSH :22 · Dashboard :3000", "wraps": ["ec2", "frontend", "api", "ml"], "pad": 14 }
+  ],
+  "connections": [
+    { "id": "operator-dashboard", "from": "operators", "to": "frontend", "label": "HTTPS / HTTP :3000", "variant": "emphasis", "labelAt": [240, 412] },
+    { "id": "dashboard-api", "from": "frontend", "to": "api", "label": "REST /api/v1", "variant": "emphasis" },
+    { "id": "api-database", "from": "api", "to": "postgres", "label": "SQL · visitas y predicciones", "labelDy": 58 },
+    { "id": "api-weather", "from": "api", "to": "open_meteo", "label": "GET forecast · clima", "variant": "dashed", "fromSide": "top", "toSide": "top", "via": [[590, 220], [1105, 220]], "labelAt": [845, 220] },
+    { "id": "api-event", "from": "api", "to": "rabbit", "label": "publica evento async", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelDy": 56 },
+    { "id": "rabbit-ml", "from": "rabbit", "to": "ml", "label": "consume con retry", "variant": "emphasis", "labelDy": 58 },
+    { "id": "ml-weather", "from": "ml", "to": "open_meteo", "label": "clima para features", "variant": "dashed", "fromSide": "top", "toSide": "bottom", "labelDx": 75 },
+    { "id": "ml-database", "from": "ml", "to": "postgres", "label": "guarda forecast y score", "variant": "emphasis", "fromSide": "top", "toSide": "bottom", "via": [[1105, 430], [845, 430]] },
+    { "id": "github-actions", "from": "github", "to": "actions", "label": "push main", "variant": "emphasis" },
+    { "id": "actions-ec2", "from": "actions", "to": "ec2", "label": "SSH :22 · git pull + migrate", "variant": "security", "labelDy": 56 },
+    { "id": "ec2-runtime", "from": "ec2", "to": "api", "label": "orquesta contenedores", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelAt": [455, 255] }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Consulta operativa", "items": ["El dashboard consume únicamente el API Go", "El clima se muestra desde Open-Meteo mediante el backend", "La UI no accede directamente a PostgreSQL ni RabbitMQ"] },
+    { "dot": "orange", "title": "Predicción asíncrona", "items": ["El registro diario se guarda antes de publicar el evento", "RabbitMQ desacopla la API del procesamiento ML", "El worker persiste el resultado que luego consulta el dashboard"] },
+    { "dot": "rose", "title": "Persistencia y despliegue", "items": ["golang-migrate registra versiones en schema_migrations", "postgres_data sobrevive a futuros despliegues", "GitHub Actions ejecuta pruebas y despliega por SSH a EC2"] }
+  ]
+}
