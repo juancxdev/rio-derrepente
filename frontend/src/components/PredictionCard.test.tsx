@@ -12,6 +12,7 @@ describe('PredictionCard', () => {
   it('shows a persisted prediction and its weather', () => {
     render(<PredictionCard title="Mañana" loading={false} data={{ prediction_date: '2026-10-07', estimated_visitors: 38, score: 71, level: 'ALTA', model_version: 'baseline-1.0', temperature_max: 31, precipitation_probability: 30 }} />);
     expect(screen.getByText('38')).toBeTruthy();
-    expect(screen.getByText(/Máxima: 31/)).toBeTruthy();
+    expect(screen.getByText(/Máxima/)).toBeTruthy();
+    expect(screen.getByText('31 °C')).toBeTruthy();
   });
 });

@@ -1,39 +1,86 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { getPrediction } from './api/predictions';
 import { getWeatherForecast } from './api/weather';
-import { PredictionCard } from './components/PredictionCard';
+import { PredictionCard, type PredictionEmptyState } from './components/PredictionCard';
 import { VisitRegistration } from './components/VisitRegistration';
 import { WeatherPanel } from './components/WeatherPanel';
-import { isRegistrationOpen, limaDate } from './time';
+import { dailyCycle } from './time';
 import type { Prediction, WeatherForecast } from './types';
 
+const registeredVisitKey = 'rio-derrepente:registered-visit-date';
+
+function storedRegisteredDate(): string | null {
+  try { return window.localStorage.getItem(registeredVisitKey); } catch { return null; }
+}
+
+function emptyState(canShowTomorrow: boolean, registeredDate: string | null, today: string): PredictionEmptyState {
+  if (!canShowTomorrow && registeredDate !== today) return 'before-close';
+  if (!canShowTomorrow) return 'awaiting-registration';
+  if (registeredDate === today) return 'processing';
+  return 'awaiting-registration';
+}
+
 export default function App() {
-  const [predictions, setPredictions] = useState<(Prediction | null | undefined)[]>([]);
+  const [clock, setClock] = useState(() => new Date());
+  const [registeredDate, setRegisteredDate] = useState<string | null>(storedRegisteredDate);
+  const [todayPrediction, setTodayPrediction] = useState<Prediction | null | undefined>(undefined);
+  const [tomorrowPrediction, setTomorrowPrediction] = useState<Prediction | null | undefined>(null);
   const [weather, setWeather] = useState<WeatherForecast[]>([]);
   const [error, setError] = useState(false);
-  const [registrationOpen, setRegistrationOpen] = useState(isRegistrationOpen());
+  const cycle = useMemo(() => dailyCycle(clock, registeredDate), [clock, registeredDate]);
 
   async function load() {
-    setError(false); setPredictions([]);
+    setError(false);
+    setTodayPrediction(undefined);
+    if (cycle.canShowTomorrow) setTomorrowPrediction(undefined);
+    else setTomorrowPrediction(null);
     try {
-      const today = new Date(); const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
-      const [items, forecast] = await Promise.all([
-        Promise.all([getPrediction(limaDate(today)), getPrediction(limaDate(tomorrow))]),
+      const [today, forecast, tomorrow] = await Promise.all([
+        getPrediction(cycle.today),
         getWeatherForecast(),
+        cycle.canShowTomorrow ? getPrediction(cycle.tomorrow) : Promise.resolve(null),
       ]);
-      setPredictions(items); setWeather(forecast.days);
+      setTodayPrediction(today);
+      setTomorrowPrediction(tomorrow);
+      setWeather(forecast.days);
     } catch { setError(true); }
   }
 
-  useEffect(() => { load(); const timer = window.setInterval(() => setRegistrationOpen(isRegistrationOpen()), 60_000); return () => window.clearInterval(timer); }, []);
+  useEffect(() => { void load(); }, [cycle.today, cycle.canShowTomorrow]);
 
-  return <main>
-    <header><p className="eyebrow">TINGO MARÍA · CATARATA DEL RÍO DERREPENTE</p><h1>Demanda turística prevista</h1><p>Información para encargados y comercios cercanos.</p></header>
-    {error ? <section className="notice" role="alert">No pudimos obtener la información. <button onClick={load}>Reintentar</button></section> : <>
-      <div className="grid"><PredictionCard title="Hoy" data={predictions[0]} loading={!predictions.length} /><PredictionCard title="Mañana" data={predictions[1]} loading={!predictions.length} /></div>
-      {weather.length > 0 && <WeatherPanel days={weather} />}
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(new Date()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!cycle.canShowTomorrow || tomorrowPrediction !== null) return;
+    const timer = window.setInterval(async () => {
+      try {
+        const prediction = await getPrediction(cycle.tomorrow);
+        if (prediction) setTomorrowPrediction(prediction);
+      } catch { /* El aviso principal conserva el control de errores de red. */ }
+    }, 8_000);
+    return () => window.clearInterval(timer);
+  }, [cycle.canShowTomorrow, cycle.tomorrow, tomorrowPrediction]);
+
+  function handleRegistered(visitDate: string) {
+    try { window.localStorage.setItem(registeredVisitKey, visitDate); } catch { /* Sin almacenamiento, la sesión actual aún puede continuar. */ }
+    setRegisteredDate(visitDate);
+    setTomorrowPrediction(null);
+  }
+
+  const tomorrowState = emptyState(cycle.canShowTomorrow, registeredDate, cycle.today);
+
+  return <main className="app-shell">
+    <header className="hero"><div className="hero-copy"><p className="eyebrow">CAYUMBA GRANDE · TINGO MARÍA · HUÁNUCO</p><h1>Catarata del Río Derrepente</h1><p>Información diaria para anticipar la demanda turística y planificar la atención.</p></div><nav aria-label="Secciones principales"><a href="#demanda">Demanda</a><a href="#clima">Clima</a><a href="#registro">Cierre diario</a></nav></header>
+    {error ? <section className="notice" role="alert"><div><b>No pudimos actualizar la información.</b><span>Comprueba la conexión con el servicio e inténtalo nuevamente.</span></div><button onClick={load}>Reintentar</button></section> : <>
+      <section id="demanda" className="demand-section" aria-labelledby="demand-title"><div className="section-heading"><div><p className="eyebrow">PANEL OPERATIVO</p><h2 id="demand-title">Demanda estimada</h2><p>La predicción de mañana solo se habilita después del cierre diario.</p></div><span className="time-pill">Hora de Lima · {cycle.registrationOpen ? 'Cierre habilitado' : 'Cierre desde las 18:00'}</span></div>
+        <div className="prediction-grid"><PredictionCard title="Hoy" data={todayPrediction} loading={todayPrediction === undefined} featured /><PredictionCard title="Mañana" data={tomorrowPrediction} loading={tomorrowPrediction === undefined} emptyState={tomorrowState} /></div>
+      </section>
+      {weather.length > 0 && <div id="clima"><WeatherPanel days={weather} /></div>}
     </>}
-    <VisitRegistration enabled={registrationOpen} />
-    <footer>Estimación generada por el modelo <b>baseline-1.0</b>. El pronóstico mostrado proviene de Open-Meteo y no sustituye los datos climáticos capturados por el backend.</footer>
+    <div id="registro"><VisitRegistration enabled={cycle.registrationOpen} onRegistered={handleRegistered} /></div>
+    <footer><span>Estimación generada por el modelo <b>baseline-1.0</b>.</span><span>El pronóstico visible proviene de Open-Meteo y no sustituye los datos climáticos capturados al registrar visitas.</span></footer>
   </main>;
 }
