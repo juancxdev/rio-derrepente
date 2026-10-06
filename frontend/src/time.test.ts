@@ -3,8 +3,13 @@ import { dailyCycle, isRegistrationOpen } from './time';
 
 describe('isRegistrationOpen', () => {
   it('opens at 18:00 in America/Lima', () => {
-    expect(isRegistrationOpen(new Date('2026-10-06T22:59:00Z'))).toBe(false);
-    expect(isRegistrationOpen(new Date('2026-10-06T23:00:00Z'))).toBe(true);
+    expect(isRegistrationOpen(new Date('2026-10-07T22:59:00Z'))).toBe(false);
+    expect(isRegistrationOpen(new Date('2026-10-07T23:00:00Z'))).toBe(true);
+  });
+
+  it('opens at 14:00 only on the demonstration date', () => {
+    expect(isRegistrationOpen(new Date('2026-10-06T18:59:00Z'))).toBe(false);
+    expect(isRegistrationOpen(new Date('2026-10-06T19:00:00Z'))).toBe(true);
   });
 
   it('does not authorize tomorrow before the daily close, even when a visit was registered', () => {

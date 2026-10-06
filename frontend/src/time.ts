@@ -8,7 +8,10 @@ export function isRegistrationOpen(value = new Date()): boolean {
     hour: '2-digit',
     hourCycle: 'h23',
   }).format(value));
-  return hour >= 18;
+  // Excepción de demostración: solo el 06/10/2026 el cierre se adelanta a las 14:00.
+  // Desde el día siguiente, la regla operativa vuelve automáticamente a las 18:00.
+  const openingHour = limaDate(value) === '2026-10-06' ? 14 : 18;
+  return hour >= openingHour;
 }
 
 export type DailyCycle = {
