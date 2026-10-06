@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/juancx/tourism-platform/backend/internal/adapters/postgres"
+	"github.com/juancx/tourism-platform/backend/internal/adapters/weather"
 	"github.com/juancx/tourism-platform/backend/internal/application"
 	"github.com/juancx/tourism-platform/backend/internal/domain/visits"
 )
@@ -16,7 +18,13 @@ import (
 type API struct {
 	register          application.RegisterVisitService
 	predictionService application.GetPredictionService
+	weather           WeatherProvider
+	latitude          float64
+	longitude         float64
 	logger            *slog.Logger
+}
+type WeatherProvider interface {
+	Forecasts(context.Context, float64, float64, time.Time, int) ([]weather.Forecast, error)
 }
 type createVisitRequest struct {
 	VisitDate string `json:"visit_date"`
@@ -27,8 +35,8 @@ type createVisitRequest struct {
 	Notes     string `json:"notes"`
 }
 
-func New(register application.RegisterVisitService, getPrediction application.GetPredictionService, logger *slog.Logger) *API {
-	return &API{register: register, predictionService: getPrediction, logger: logger}
+func New(register application.RegisterVisitService, getPrediction application.GetPredictionService, provider WeatherProvider, latitude, longitude float64, logger *slog.Logger) *API {
+	return &API{register: register, predictionService: getPrediction, weather: provider, latitude: latitude, longitude: longitude, logger: logger}
 }
 func (a *API) App() *fiber.App {
 	app := fiber.New(fiber.Config{ErrorHandler: a.errorHandler})
@@ -41,7 +49,45 @@ func (a *API) App() *fiber.App {
 	app.Get("/health", func(c *fiber.Ctx) error { return c.JSON(fiber.Map{"status": "ok", "service": "tourism-api"}) })
 	app.Post("/api/v1/sites/:siteID/visits", a.createVisit)
 	app.Get("/api/v1/sites/:siteID/predictions/:date", a.getPrediction)
+	app.Get("/api/v1/sites/:siteID/weather/forecast", a.getForecast)
 	return app
+}
+func (a *API) getForecast(c *fiber.Ctx) error {
+	if _, err := uuid.Parse(c.Params("siteID")); err != nil {
+		return fiber.NewError(fiber.StatusUnprocessableEntity, "invalid site_id")
+	}
+	if a.weather == nil {
+		return fiber.NewError(fiber.StatusServiceUnavailable, "weather service unavailable")
+	}
+	days := 7
+	if value := c.Query("days"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed < 1 || parsed > 7 {
+			return fiber.NewError(fiber.StatusUnprocessableEntity, "days must be between 1 and 7")
+		}
+		days = parsed
+	}
+	location, err := time.LoadLocation("America/Lima")
+	if err != nil {
+		return err
+	}
+	now := time.Now().In(location)
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
+	forecasts, err := a.weather.Forecasts(c.Context(), a.latitude, a.longitude, start, days)
+	if err != nil {
+		return err
+	}
+	response := make([]fiber.Map, 0, len(forecasts))
+	for _, forecast := range forecasts {
+		response = append(response, fiber.Map{
+			"date":                      forecast.Date.Format("2006-01-02"),
+			"temperature_max":           forecast.TemperatureMax,
+			"precipitation_mm":          forecast.PrecipitationMM,
+			"precipitation_probability": forecast.PrecipitationProbability,
+			"weather_code":              forecast.WeatherCode,
+		})
+	}
+	return c.JSON(fiber.Map{"source": "open-meteo", "days": response})
 }
 func (a *API) createVisit(c *fiber.Ctx) error {
 	siteID, err := uuid.Parse(c.Params("siteID"))

@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/juancx/tourism-platform/backend/internal/adapters/logging"
 	"github.com/juancx/tourism-platform/backend/internal/adapters/postgres"
+	"github.com/juancx/tourism-platform/backend/internal/adapters/weather"
 	"github.com/juancx/tourism-platform/backend/internal/application"
 	"github.com/juancx/tourism-platform/backend/internal/domain/predictions"
 	"github.com/juancx/tourism-platform/backend/internal/domain/visits"
@@ -35,9 +36,35 @@ type missingPredictions struct{}
 func (missingPredictions) FindByDate(context.Context, uuid.UUID, time.Time) (predictions.Prediction, error) {
 	return predictions.Prediction{}, postgres.ErrNotFound
 }
-func testApp(duplicate bool) *http.Client { return nil }
+
+type fixedWeather struct{}
+
+func (fixedWeather) Forecasts(_ context.Context, _ float64, _ float64, target time.Time, days int) ([]weather.Forecast, error) {
+	result := make([]weather.Forecast, days)
+	for i := range result {
+		result[i] = weather.Forecast{Date: target.AddDate(0, 0, i), TemperatureMax: 30, PrecipitationMM: 2, PrecipitationProbability: 45, WeatherCode: 3}
+	}
+	return result, nil
+}
 func newTestAPI(duplicate bool) *API {
-	return New(application.NewRegisterVisitService(memoryVisits{duplicate}, noopPublisher{}), application.NewGetPredictionService(missingPredictions{}), logging.New())
+	return New(application.NewRegisterVisitService(memoryVisits{duplicate}, noopPublisher{}), application.NewGetPredictionService(missingPredictions{}), fixedWeather{}, -9.295, -75.996, logging.New())
+}
+func TestForecastReturnsDashboardWeather(t *testing.T) {
+	a := newTestAPI(false).App()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/sites/11111111-1111-1111-1111-111111111111/weather/forecast?days=2", nil)
+	res, err := a.Test(req)
+	if err != nil || res.StatusCode != http.StatusOK {
+		t.Fatalf("want 200 got %v %v", res.StatusCode, err)
+	}
+}
+
+func TestForecastRejectsAnUnsupportedNumberOfDays(t *testing.T) {
+	a := newTestAPI(false).App()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/sites/11111111-1111-1111-1111-111111111111/weather/forecast?days=8", nil)
+	res, err := a.Test(req)
+	if err != nil || res.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("want 422 got %v %v", res.StatusCode, err)
+	}
 }
 func TestCreateVisitRejectsInconsistentCounts(t *testing.T) {
 	a := newTestAPI(false).App()

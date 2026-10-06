@@ -1,6 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
-CREATE TABLE tourist_sites (
+CREATE TABLE IF NOT EXISTS tourist_sites (
   id UUID PRIMARY KEY,
   code VARCHAR(50) NOT NULL UNIQUE,
   name VARCHAR(150) NOT NULL,
@@ -14,7 +14,7 @@ INSERT INTO tourist_sites (id, code, name, latitude, longitude)
 VALUES ('11111111-1111-1111-1111-111111111111', 'catarata-derrepente', 'Catarata del Río Derrepente', -9.295000, -75.996000)
 ON CONFLICT (id) DO NOTHING;
 
-CREATE TABLE visit_records (
+CREATE TABLE IF NOT EXISTS visit_records (
   id BIGSERIAL PRIMARY KEY,
   site_id UUID NOT NULL REFERENCES tourist_sites(id),
   visit_date DATE NOT NULL,
@@ -27,7 +27,7 @@ CREATE TABLE visit_records (
   UNIQUE(site_id, visit_date)
 );
 
-CREATE TABLE weather_forecasts (
+CREATE TABLE IF NOT EXISTS weather_forecasts (
   id BIGSERIAL PRIMARY KEY,
   site_id UUID NOT NULL REFERENCES tourist_sites(id),
   forecast_date DATE NOT NULL,
@@ -41,7 +41,7 @@ CREATE TABLE weather_forecasts (
   UNIQUE(site_id, forecast_date, source, generated_at)
 );
 
-CREATE TABLE predictions (
+CREATE TABLE IF NOT EXISTS predictions (
   id BIGSERIAL PRIMARY KEY,
   site_id UUID NOT NULL REFERENCES tourist_sites(id),
   prediction_date DATE NOT NULL,
@@ -54,7 +54,7 @@ CREATE TABLE predictions (
   UNIQUE(site_id, prediction_date, model_version)
 );
 
-CREATE TABLE processing_jobs (
+CREATE TABLE IF NOT EXISTS processing_jobs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   visit_record_id BIGINT REFERENCES visit_records(id),
   job_type VARCHAR(50) NOT NULL,
@@ -65,6 +65,5 @@ CREATE TABLE processing_jobs (
   finished_at TIMESTAMPTZ
 );
 
-CREATE INDEX idx_visits_site_date ON visit_records(site_id, visit_date);
-CREATE INDEX idx_predictions_site_date ON predictions(site_id, prediction_date);
-
+CREATE INDEX IF NOT EXISTS idx_visits_site_date ON visit_records(site_id, visit_date);
+CREATE INDEX IF NOT EXISTS idx_predictions_site_date ON predictions(site_id, prediction_date);

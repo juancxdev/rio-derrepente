@@ -7,12 +7,34 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-tourism}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./db/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 3s
       retries: 10
+
+  migrate:
+    image: migrate/migrate:v4.18.3
+    profiles: ["tools"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./db/migrations:/migrations:ro
+    entrypoint: ["migrate"]
+    command: ["-path=/migrations", "-database=postgres://${POSTGRES_USER:-tourism}:${POSTGRES_PASSWORD:-tourism}@postgres:5432/${POSTGRES_DB:-tourism}?sslmode=disable", "up"]
+
+  seed-demo:
+    image: postgres:16-alpine
+    profiles: ["demo"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-tourism}
+    volumes:
+      - ./db/seeds:/seeds:ro
+    command: ["psql", "-h", "postgres", "-U", "${POSTGRES_USER:-tourism}", "-d", "${POSTGRES_DB:-tourism}", "-f", "/seeds/2026-10-demo-visits.sql"]
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
@@ -54,6 +76,13 @@ services:
         condition: service_healthy
     ports:
       - "8000:8000"
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - api
+    ports:
+      - "3000:80"
 
 volumes:
   postgres_data:
