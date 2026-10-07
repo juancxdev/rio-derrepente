@@ -1,4 +1,14 @@
-export type Prediction={prediction_date:string;estimated_visitors:number;score:number;level:string;model_version:string;temperature_max?:number;precipitation_probability?:number};
+export type Prediction = {
+  prediction_date: string;
+  estimated_visitors: number;
+  score: number;
+  level: string;
+  model_version: string;
+  temperature_max?: number;
+  precipitation_probability?: number;
+  precipitation_mm?: number;
+  weather_code?: number;
+};
 
 export type WeatherForecast = {
   date: string;

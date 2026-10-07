@@ -7,8 +7,8 @@ describe('WeatherPanel', () => {
     render(<WeatherPanel days={[{ date: '2026-10-07', temperature_max: 28, precipitation_mm: 3.2, precipitation_probability: 91, weather_code: 80 }]} />);
     expect(screen.getByRole('columnheader', { name: 'Lluvia' })).toBeTruthy();
     expect(screen.getAllByText('91%')).toHaveLength(2);
-    expect(screen.getByText('3.2 mm')).toBeTruthy();
-    expect(screen.getByText('🌦️ Lluvia')).toBeTruthy();
+    expect(screen.getAllByText('3.2 mm')).toHaveLength(2);
+    expect(screen.getByRole('heading', { name: 'Lluvia' })).toBeTruthy();
     expect(screen.getAllByText('Precaución: evalúa el sendero y el río.')).toHaveLength(2);
   });
 });

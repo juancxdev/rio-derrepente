@@ -10,9 +10,16 @@ describe('PredictionCard', () => {
   });
 
   it('shows a persisted prediction and its weather', () => {
-    render(<PredictionCard title="Mañana" loading={false} data={{ prediction_date: '2026-10-07', estimated_visitors: 38, score: 71, level: 'ALTA', model_version: 'baseline-1.0', temperature_max: 31, precipitation_probability: 30 }} />);
+    render(<PredictionCard title="Mañana" loading={false} data={{ prediction_date: '2026-10-07', estimated_visitors: 38, score: 71, level: 'ALTA', model_version: 'baseline-1.0', temperature_max: 31, precipitation_probability: 30, precipitation_mm: 1.2, weather_code: 3 }} />);
     expect(screen.getByText('38')).toBeTruthy();
-    expect(screen.getByText(/Máxima/)).toBeTruthy();
+    expect(screen.getByText('Temperatura máxima')).toBeTruthy();
     expect(screen.getByText('31 °C')).toBeTruthy();
+    expect(screen.getByText('Nublado')).toBeTruthy();
+    expect(screen.getByText('1.2 mm')).toBeTruthy();
+  });
+
+  it('explains when the prediction has no weather context', () => {
+    render(<PredictionCard title="Hoy" loading={false} data={{ prediction_date: '2026-10-07', estimated_visitors: 38, score: 71, level: 'ALTA', model_version: 'baseline-1.0' }} />);
+    expect(screen.getByText('El contexto climático para esta fecha aún no está disponible.')).toBeTruthy();
   });
 });

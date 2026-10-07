@@ -6,6 +6,7 @@ import { VisitRegistration } from './components/VisitRegistration';
 import { WeatherPanel } from './components/WeatherPanel';
 import { dailyCycle } from './time';
 import type { Prediction, WeatherForecast } from './types';
+import { attachForecastContext } from './weatherPresentation';
 
 const registeredVisitKey = 'rio-derrepente:registered-visit-date';
 
@@ -71,12 +72,14 @@ export default function App() {
   }
 
   const tomorrowState = emptyState(cycle.canShowTomorrow, registeredDate, cycle.today);
+  const todayCardPrediction = attachForecastContext(todayPrediction, weather);
+  const tomorrowCardPrediction = attachForecastContext(tomorrowPrediction, weather);
 
   return <main className="app-shell">
-    <header className="hero"><div className="hero-copy"><p className="eyebrow">CAYUMBA GRANDE · TINGO MARÍA · HUÁNUCO</p><h1>Catarata del Río Derrepente</h1><p>Información diaria para anticipar la demanda turística y planificar la atención.</p></div><nav aria-label="Secciones principales"><a href="#demanda">Demanda</a><a href="#clima">Clima</a><a href="#registro">Cierre diario</a></nav></header>
+    <header className="hero"><div className="hero-copy"><p className="eyebrow">Cayumba Grande, Tingo María, Huánuco</p><h1>Catarata del Río Derrepente</h1><p>Demanda turística estimada y condiciones del clima para organizar la atención diaria.</p></div><nav aria-label="Secciones principales"><a href="#demanda">Demanda</a><a href="#clima">Clima</a><a href="#registro">Cierre diario</a></nav></header>
     {error ? <section className="notice" role="alert"><div><b>No pudimos actualizar la información.</b><span>Comprueba la conexión con el servicio e inténtalo nuevamente.</span></div><button onClick={load}>Reintentar</button></section> : <>
-      <section id="demanda" className="demand-section" aria-labelledby="demand-title"><div className="section-heading"><div><p className="eyebrow">PANEL OPERATIVO</p><h2 id="demand-title">Demanda estimada</h2><p>La predicción de mañana solo se habilita después del cierre diario.</p></div><span className="time-pill">Hora de Lima · {cycle.registrationOpen ? 'Cierre habilitado' : 'Cierre desde las 18:00'}</span></div>
-        <div className="prediction-grid"><PredictionCard title="Hoy" data={todayPrediction} loading={todayPrediction === undefined} featured /><PredictionCard title="Mañana" data={tomorrowPrediction} loading={tomorrowPrediction === undefined} emptyState={tomorrowState} /></div>
+      <section id="demanda" className="demand-section" aria-labelledby="demand-title"><div className="section-heading"><div><p className="eyebrow">Panel operativo</p><h2 id="demand-title">Demanda estimada</h2><p>La predicción de mañana aparece después de registrar el cierre diario.</p></div><span className="time-pill">Hora de Lima: {cycle.registrationOpen ? 'cierre habilitado' : 'cierre desde las 18:00'}</span></div>
+        <div className="prediction-grid"><PredictionCard title="Hoy" data={todayCardPrediction} loading={todayPrediction === undefined} featured /><PredictionCard title="Mañana" data={tomorrowCardPrediction} loading={tomorrowPrediction === undefined} emptyState={tomorrowState} /></div>
       </section>
       {weather.length > 0 && <div id="clima"><WeatherPanel days={weather} /></div>}
     </>}
