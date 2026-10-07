@@ -46,6 +46,13 @@ func (fixedWeather) Forecasts(_ context.Context, _ float64, _ float64, target ti
 	}
 	return result, nil
 }
+func (fixedWeather) Historical(_ context.Context, _ float64, _ float64, target time.Time, days int) ([]weather.Forecast, error) {
+	result := make([]weather.Forecast, days)
+	for i := range result {
+		result[i] = weather.Forecast{Date: target.AddDate(0, 0, i), TemperatureMax: 29, PrecipitationMM: 1, WeatherCode: 51}
+	}
+	return result, nil
+}
 func newTestAPI(duplicate bool) *API {
 	return New(application.NewRegisterVisitService(memoryVisits{duplicate}, noopPublisher{}), application.NewGetPredictionService(missingPredictions{}), fixedWeather{}, -9.295, -75.996, logging.New())
 }
@@ -55,6 +62,20 @@ func TestForecastReturnsDashboardWeather(t *testing.T) {
 	res, err := a.Test(req)
 	if err != nil || res.StatusCode != http.StatusOK {
 		t.Fatalf("want 200 got %v %v", res.StatusCode, err)
+	}
+}
+
+func TestCalendarWeekStartsOnMondayAndEndsOnSunday(t *testing.T) {
+	location, err := time.LoadLocation("America/Lima")
+	if err != nil {
+		t.Fatal(err)
+	}
+	start, end := calendarWeek(time.Date(2026, time.October, 7, 12, 0, 0, 0, location))
+	if got, want := start.Format("2006-01-02"), "2026-10-05"; got != want {
+		t.Fatalf("week starts %s, want %s", got, want)
+	}
+	if got, want := end.Format("2006-01-02"), "2026-10-11"; got != want {
+		t.Fatalf("week ends %s, want %s", got, want)
 	}
 }
 

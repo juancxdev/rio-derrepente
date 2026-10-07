@@ -14,8 +14,9 @@ export type WeatherForecast = {
   date: string;
   temperature_max: number;
   precipitation_mm: number;
-  precipitation_probability: number;
+  precipitation_probability: number | null;
   weather_code: number;
+  observed: boolean;
 };
 
 export type WeatherResponse = { source: string; days: WeatherForecast[] };

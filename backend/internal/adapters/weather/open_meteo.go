@@ -11,8 +11,9 @@ import (
 
 // OpenMeteo is an outbound adapter. It deliberately has no dependency on the domain.
 type OpenMeteo struct {
-	BaseURL string
-	Client  *http.Client
+	BaseURL    string
+	ArchiveURL string
+	Client     *http.Client
 }
 type Forecast struct {
 	Date                                                      time.Time
@@ -44,14 +45,35 @@ func (o OpenMeteo) Forecasts(ctx context.Context, latitude, longitude float64, s
 	if days < 1 || days > 7 {
 		return nil, fmt.Errorf("forecast days must be between 1 and 7")
 	}
-	u, err := url.Parse(o.BaseURL)
+	return o.dailyRange(ctx, o.BaseURL, latitude, longitude, start, days, true)
+}
+
+// Historical fetches observed daily conditions from Open-Meteo Archive. The
+// archive has no historical precipitation probability, only observed rainfall.
+func (o OpenMeteo) Historical(ctx context.Context, latitude, longitude float64, start time.Time, days int) ([]Forecast, error) {
+	if days < 1 || days > 7 {
+		return nil, fmt.Errorf("historical days must be between 1 and 7")
+	}
+	archiveURL := o.ArchiveURL
+	if archiveURL == "" {
+		archiveURL = "https://archive-api.open-meteo.com/v1/archive"
+	}
+	return o.dailyRange(ctx, archiveURL, latitude, longitude, start, days, false)
+}
+
+func (o OpenMeteo) dailyRange(ctx context.Context, baseURL string, latitude, longitude float64, start time.Time, days int, includeProbability bool) ([]Forecast, error) {
+	u, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, err
 	}
 	q := u.Query()
 	q.Set("latitude", fmt.Sprint(latitude))
 	q.Set("longitude", fmt.Sprint(longitude))
-	q.Set("daily", "temperature_2m_max,precipitation_sum,precipitation_probability_max,weather_code")
+	daily := "temperature_2m_max,precipitation_sum,weather_code"
+	if includeProbability {
+		daily = "temperature_2m_max,precipitation_sum,precipitation_probability_max,weather_code"
+	}
+	q.Set("daily", daily)
 	q.Set("timezone", "America/Lima")
 	q.Set("start_date", start.Format("2006-01-02"))
 	q.Set("end_date", start.AddDate(0, 0, days-1).Format("2006-01-02"))
@@ -76,7 +98,7 @@ func (o OpenMeteo) Forecasts(ctx context.Context, latitude, longitude float64, s
 	if err = json.NewDecoder(res.Body).Decode(&body); err != nil {
 		return nil, err
 	}
-	if len(body.Daily.Time) != days || len(body.Daily.Temperature) != days || len(body.Daily.Precipitation) != days || len(body.Daily.Probability) != days || len(body.Daily.Code) != days {
+	if len(body.Daily.Time) != days || len(body.Daily.Temperature) != days || len(body.Daily.Precipitation) != days || len(body.Daily.Code) != days || (includeProbability && len(body.Daily.Probability) != days) {
 		return nil, fmt.Errorf("unexpected open-meteo daily response")
 	}
 	forecasts := make([]Forecast, days)
@@ -85,7 +107,11 @@ func (o OpenMeteo) Forecasts(ctx context.Context, latitude, longitude float64, s
 		if parseErr != nil {
 			return nil, fmt.Errorf("invalid Open-Meteo date: %w", parseErr)
 		}
-		forecasts[i] = Forecast{Date: date, TemperatureMax: body.Daily.Temperature[i], PrecipitationMM: body.Daily.Precipitation[i], PrecipitationProbability: body.Daily.Probability[i], WeatherCode: body.Daily.Code[i]}
+		probability := 0.0
+		if includeProbability {
+			probability = body.Daily.Probability[i]
+		}
+		forecasts[i] = Forecast{Date: date, TemperatureMax: body.Daily.Temperature[i], PrecipitationMM: body.Daily.Precipitation[i], PrecipitationProbability: probability, WeatherCode: body.Daily.Code[i]}
 	}
 	return forecasts, nil
 }

@@ -1,30 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { attachForecastContext } from './weatherPresentation';
+import { weatherLabel, weatherScene } from './weatherPresentation';
 
-const forecast = [{
-  date: '2026-10-07',
-  temperature_max: 28,
-  precipitation_mm: 3.2,
-  precipitation_probability: 91,
-  weather_code: 80,
-}];
-
-describe('attachForecastContext', () => {
-  it('uses the backend forecast only for missing weather fields on the matching date', () => {
-    expect(attachForecastContext({
-      prediction_date: '2026-10-07T00:00:00Z', estimated_visitors: 38, score: 71, level: 'ALTA', model_version: 'baseline-1.0',
-    }, forecast)).toMatchObject({ temperature_max: 28, precipitation_mm: 3.2, precipitation_probability: 91, weather_code: 80 });
-  });
-
-  it('keeps weather values persisted with the prediction', () => {
-    expect(attachForecastContext({
-      prediction_date: '2026-10-07', estimated_visitors: 38, score: 71, level: 'ALTA', model_version: 'baseline-1.0', temperature_max: 31, precipitation_probability: 30,
-    }, forecast)).toMatchObject({ temperature_max: 31, precipitation_probability: 30, precipitation_mm: 3.2, weather_code: 80 });
-  });
-
-  it('does not add climate data when the forecast has no matching date', () => {
-    expect(attachForecastContext({
-      prediction_date: '2026-10-08', estimated_visitors: 38, score: 71, level: 'ALTA', model_version: 'baseline-1.0',
-    }, forecast)).not.toHaveProperty('temperature_max');
+describe('weather presentation', () => {
+  it('maps every Open-Meteo WMO family to a readable label and visual scene', () => {
+    expect(weatherLabel(2)).toBe('Parcialmente nublado');
+    expect(weatherLabel(45)).toBe('Niebla');
+    expect(weatherLabel(67)).toBe('Lluvia helada');
+    expect(weatherLabel(77)).toBe('Granos de nieve');
+    expect(weatherLabel(81)).toBe('Chubascos');
+    expect(weatherLabel(99)).toBe('Tormenta');
+    expect(weatherScene(2)).toBe('partly-cloudy');
+    expect(weatherScene(45)).toBe('fog');
+    expect(weatherScene(53)).toBe('drizzle');
+    expect(weatherScene(63)).toBe('rain');
+    expect(weatherScene(81)).toBe('showers');
+    expect(weatherScene(85)).toBe('snow');
+    expect(weatherScene(96)).toBe('storm');
   });
 });

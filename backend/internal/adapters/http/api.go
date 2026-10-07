@@ -25,6 +25,7 @@ type API struct {
 }
 type WeatherProvider interface {
 	Forecasts(context.Context, float64, float64, time.Time, int) ([]weather.Forecast, error)
+	Historical(context.Context, float64, float64, time.Time, int) ([]weather.Forecast, error)
 }
 type createVisitRequest struct {
 	VisitDate string `json:"visit_date"`
@@ -72,22 +73,58 @@ func (a *API) getForecast(c *fiber.Ctx) error {
 		return err
 	}
 	now := time.Now().In(location)
-	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
-	forecasts, err := a.weather.Forecasts(c.Context(), a.latitude, a.longitude, start, days)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
+	if days < 7 {
+		forecasts, forecastErr := a.weather.Forecasts(c.Context(), a.latitude, a.longitude, today, days)
+		if forecastErr != nil {
+			return forecastErr
+		}
+		return c.JSON(fiber.Map{"source": "open-meteo", "days": weatherResponse(forecasts, false)})
+	}
+	weekStart, weekEnd := calendarWeek(today)
+	// Seven days means the whole current week: Monday through Sunday.
+
+	pastDays := int(today.Sub(weekStart).Hours() / 24)
+	observed := make([]weather.Forecast, 0, pastDays)
+	if pastDays > 0 {
+		observed, err = a.weather.Historical(c.Context(), a.latitude, a.longitude, weekStart, pastDays)
+		if err != nil {
+			return err
+		}
+	}
+	forecastDays := int(weekEnd.Sub(today).Hours()/24) + 1
+	forecasts, err := a.weather.Forecasts(c.Context(), a.latitude, a.longitude, today, forecastDays)
 	if err != nil {
 		return err
 	}
+	response := append(weatherResponse(observed, true), weatherResponse(forecasts, false)...)
+	return c.JSON(fiber.Map{"source": "open-meteo", "days": response})
+}
+
+func weatherResponse(forecasts []weather.Forecast, observed bool) []fiber.Map {
 	response := make([]fiber.Map, 0, len(forecasts))
 	for _, forecast := range forecasts {
+		probability := any(forecast.PrecipitationProbability)
+		if observed {
+			probability = nil
+		}
 		response = append(response, fiber.Map{
 			"date":                      forecast.Date.Format("2006-01-02"),
 			"temperature_max":           forecast.TemperatureMax,
 			"precipitation_mm":          forecast.PrecipitationMM,
-			"precipitation_probability": forecast.PrecipitationProbability,
+			"precipitation_probability": probability,
 			"weather_code":              forecast.WeatherCode,
+			"observed":                  observed,
 		})
 	}
-	return c.JSON(fiber.Map{"source": "open-meteo", "days": response})
+	return response
+}
+
+func calendarWeek(today time.Time) (time.Time, time.Time) {
+	// Go uses Sunday = 0; normalize it so Monday starts the week.
+	daysSinceMonday := (int(today.Weekday()) + 6) % 7
+	start := today.AddDate(0, 0, -daysSinceMonday)
+	return start, start.AddDate(0, 0, 6)
 }
 func (a *API) createVisit(c *fiber.Ctx) error {
 	siteID, err := uuid.Parse(c.Params("siteID"))

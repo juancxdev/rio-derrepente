@@ -7,3 +7,6 @@ coverage.out
 node_modules/
 dist/
 *.tsbuildinfo
+docs/sandbox-externo/
+.DS_Store
+mermaid-diagram.png

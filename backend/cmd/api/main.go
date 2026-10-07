@@ -43,7 +43,10 @@ func main() {
 		log.Fatal(err)
 	}
 	defer publisher.Close()
-	weatherProvider := weather.OpenMeteo{BaseURL: env("OPEN_METEO_URL", "https://api.open-meteo.com/v1/forecast")}
+	weatherProvider := weather.OpenMeteo{
+		BaseURL:    env("OPEN_METEO_URL", "https://api.open-meteo.com/v1/forecast"),
+		ArchiveURL: env("OPEN_METEO_ARCHIVE_URL", "https://archive-api.open-meteo.com/v1/archive"),
+	}
 	api := httpadapter.New(application.NewRegisterVisitService(repos, publisher), application.NewGetPredictionService(repos), weatherProvider, envFloat("SITE_LATITUDE", -9.295000), envFloat("SITE_LONGITUDE", -75.996000), logger).App()
 	logger.Info("api_started", "port", env("API_PORT", "8080"))
 	log.Fatal(api.Listen(":" + env("API_PORT", "8080")))

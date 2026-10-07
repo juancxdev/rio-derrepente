@@ -2,7 +2,7 @@
 title: 'Rediseño operativo y contexto climático de la predicción'
 type: 'feature'
 created: '2026-10-06'
-status: 'in-progress'
+status: 'in-review'
 route: 'dispatch'
 review_loop_iteration: 0
 context: []

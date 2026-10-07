@@ -1,14 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getPrediction } from './api/predictions';
 import { getWeatherForecast } from './api/weather';
+import { MonitoringPanel } from './components/MonitoringPanel';
 import { PredictionCard, type PredictionEmptyState } from './components/PredictionCard';
 import { VisitRegistration } from './components/VisitRegistration';
 import { WeatherPanel } from './components/WeatherPanel';
 import { dailyCycle } from './time';
 import type { Prediction, WeatherForecast } from './types';
-import { attachForecastContext } from './weatherPresentation';
 
 const registeredVisitKey = 'rio-derrepente:registered-visit-date';
+type View = 'summary' | 'admin' | 'monitoring';
+
+function viewFromHash(): View {
+  const value = window.location.hash.replace('#', '');
+  return ['summary', 'admin', 'monitoring'].includes(value) ? value as View : 'summary';
+}
 
 function storedRegisteredDate(): string | null {
   try { return window.localStorage.getItem(registeredVisitKey); } catch { return null; }
@@ -22,6 +28,7 @@ function emptyState(canShowTomorrow: boolean, registeredDate: string | null, tod
 }
 
 export default function App() {
+  const [view, setView] = useState<View>(viewFromHash);
   const [clock, setClock] = useState(() => new Date());
   const [registeredDate, setRegisteredDate] = useState<string | null>(storedRegisteredDate);
   const [todayPrediction, setTodayPrediction] = useState<Prediction | null | undefined>(undefined);
@@ -72,18 +79,27 @@ export default function App() {
   }
 
   const tomorrowState = emptyState(cycle.canShowTomorrow, registeredDate, cycle.today);
-  const todayCardPrediction = attachForecastContext(todayPrediction, weather);
-  const tomorrowCardPrediction = attachForecastContext(tomorrowPrediction, weather);
+  const todayCardPrediction = todayPrediction;
+  const tomorrowCardPrediction = tomorrowPrediction;
+
+  function changeView(next: View) {
+    setView(next);
+    window.history.replaceState(null, '', `#${next}`);
+  }
 
   return <main className="app-shell">
-    <header className="hero"><div className="hero-copy"><p className="eyebrow">Cayumba Grande, Tingo María, Huánuco</p><h1>Catarata del Río Derrepente</h1><p>Demanda turística estimada y condiciones del clima para organizar la atención diaria.</p></div><nav aria-label="Secciones principales"><a href="#demanda">Demanda</a><a href="#clima">Clima</a><a href="#registro">Cierre diario</a></nav></header>
-    {error ? <section className="notice" role="alert"><div><b>No pudimos actualizar la información.</b><span>Comprueba la conexión con el servicio e inténtalo nuevamente.</span></div><button onClick={load}>Reintentar</button></section> : <>
-      <section id="demanda" className="demand-section" aria-labelledby="demand-title"><div className="section-heading"><div><p className="eyebrow">Panel operativo</p><h2 id="demand-title">Demanda estimada</h2><p>La predicción de mañana aparece después de registrar el cierre diario.</p></div><span className="time-pill">Hora de Lima: {cycle.registrationOpen ? 'cierre habilitado' : 'cierre desde las 18:00'}</span></div>
-        <div className="prediction-grid"><PredictionCard title="Hoy" data={todayCardPrediction} loading={todayPrediction === undefined} featured /><PredictionCard title="Mañana" data={tomorrowCardPrediction} loading={tomorrowPrediction === undefined} emptyState={tomorrowState} /></div>
-      </section>
-      {weather.length > 0 && <div id="clima"><WeatherPanel days={weather} /></div>}
-    </>}
-    <div id="registro"><VisitRegistration enabled={cycle.registrationOpen} onRegistered={handleRegistered} /></div>
-    <footer><span>Estimación generada por el modelo <b>baseline-1.0</b>.</span><span>El pronóstico visible proviene de Open-Meteo y no sustituye los datos climáticos capturados al registrar visitas.</span></footer>
+    <div className="app-layout">
+      <aside className="sidebar"><div className="brand"><span className="brand-mark">RD</span><div><b>Río Derrepente</b><span>Panel de afluencia</span></div></div><nav aria-label="Navegación de la plataforma" className="sidebar-nav">
+        <button className={view === 'summary' ? 'active' : ''} aria-current={view === 'summary' ? 'page' : undefined} onClick={() => changeView('summary')}>Resumen</button>
+        <button className={view === 'admin' ? 'active' : ''} aria-current={view === 'admin' ? 'page' : undefined} onClick={() => changeView('admin')}>Administración</button>
+        <button className={view === 'monitoring' ? 'active' : ''} aria-current={view === 'monitoring' ? 'page' : undefined} onClick={() => changeView('monitoring')}>Monitoreo</button>
+      </nav><div className="sidebar-note"><span>Destino monitoreado</span><b>Catarata del Río Derrepente</b></div></aside>
+      <div className="workspace"><header className="workspace-header"><div><p className="location-label">Catarata del Río Derrepente · Tingo María</p><h1>{view === 'summary' ? 'Resumen operativo' : view === 'admin' ? 'Administración' : 'Monitoreo'}</h1></div><span className="time-pill">{cycle.registrationOpen ? 'Cierre habilitado' : 'Cierre desde las 18:00'}</span></header>
+        {error && <section className="notice" role="alert"><div><b>No pudimos actualizar la información.</b><span>Comprueba la conexión con el servicio e inténtalo nuevamente.</span></div><button onClick={load}>Reintentar</button></section>}
+        {!error && view === 'summary' && <><section className="workspace-intro"><div><h2>Demanda estimada</h2><p>Una lectura clara para organizar atención, stock y personal durante la jornada.</p></div></section><div className="prediction-grid"><PredictionCard title="Hoy" data={todayCardPrediction} loading={todayPrediction === undefined} featured /><PredictionCard title="Mañana" data={tomorrowCardPrediction} loading={tomorrowPrediction === undefined} emptyState={tomorrowState} /></div>{weather.length > 0 ? <WeatherPanel days={weather} /> : <section className="empty-workspace"><h2>Pronóstico no disponible</h2><p>Intenta actualizar cuando el servicio meteorológico esté disponible.</p></section>}</>}
+        {view === 'admin' && <><section className="workspace-intro"><div><h2>Cierre y registro diario</h2><p>Registra la afluencia real al final de la jornada. Este dato desencadena el cálculo de mañana.</p></div></section><VisitRegistration enabled={cycle.registrationOpen} onRegistered={handleRegistered} /></>}
+        {view === 'monitoring' && <MonitoringPanel />}
+      </div>
+    </div>
   </main>;
 }

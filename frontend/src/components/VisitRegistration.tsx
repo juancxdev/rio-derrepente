@@ -26,8 +26,8 @@ export function VisitRegistration({ enabled, onRegistered }: Props) {
     } finally { setBusy(false); }
   }
 
-  if (!enabled) return <section className="register-locked"><p className="eyebrow">REGISTRO DIARIO</p><h2>Disponible desde las 18:00</h2><p>El cierre de visitas de hoy se habilita a las 18:00 (hora de Lima).</p></section>;
-  return <section className="register-panel"><div className="section-heading"><div><p className="eyebrow">CIERRE OPERATIVO</p><h2>Registrar visitantes de hoy</h2><p>Este cierre activa el cálculo de la demanda estimada para mañana.</p></div><span className="status-pill">Disponible ahora</span></div><form onSubmit={submit}>
+  if (!enabled) return <section className="register-locked"><p className="card-label">Registro diario</p><h2>Disponible desde las 18:00</h2><p>El cierre de visitas de hoy se habilita a las 18:00, hora de Lima.</p></section>;
+  return <section className="register-panel"><div className="section-heading"><div><h2>Registrar visitantes de hoy</h2><p>Este cierre activa el cálculo de la demanda estimada para mañana.</p></div><span className="status-pill">Disponible ahora</span></div><form onSubmit={submit}>
     <label>Locales<input type="number" min="0" value={local} onChange={(e) => setLocal(Number(e.target.value))} /></label>
     <label>Nacionales<input type="number" min="0" value={national} onChange={(e) => setNational(Number(e.target.value))} /></label>
     <label>Extranjeros<input type="number" min="0" value={foreign} onChange={(e) => setForeign(Number(e.target.value))} /></label>

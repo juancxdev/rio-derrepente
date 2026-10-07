@@ -1,36 +1,54 @@
 import type { WeatherForecast } from '../types';
-import { weatherLabel } from '../weatherPresentation';
+import { Cloud, CloudFog, CloudLightning, CloudRain, CloudSnow, CloudSun, Sun } from '@phosphor-icons/react';
+import { limaDate } from '../time';
+import { weatherLabel, weatherScene } from '../weatherPresentation';
 
-function rainAdvice(day: WeatherForecast): string {
-  if (day.precipitation_mm >= 8 || day.precipitation_probability >= 90) return 'Precaución: evalúa el sendero y el río.';
-  if (day.precipitation_probability >= 70) return 'Recomienda impermeable y calzado con agarre.';
-  return 'Condiciones favorables para la visita.';
+function WeatherIcon({ code }: { code: number }) {
+  const common = { size: 34, weight: 'duotone' as const, 'aria-hidden': true };
+  switch (weatherScene(code)) {
+    case 'clear': return <Sun {...common} />;
+    case 'partly-cloudy': return <CloudSun {...common} />;
+    case 'overcast': return <Cloud {...common} />;
+    case 'fog': return <CloudFog {...common} />;
+    case 'snow': return <CloudSnow {...common} />;
+    case 'storm': return <CloudLightning {...common} />;
+    default: return <CloudRain {...common} />;
+  }
 }
 
 function displayDay(date: string): { day: string; date: string } {
   const value = new Date(`${date}T12:00:00Z`);
   return {
-    day: new Intl.DateTimeFormat('es-PE', { weekday: 'short', timeZone: 'America/Lima' }).format(value),
+    day: new Intl.DateTimeFormat('es-PE', { weekday: 'long', timeZone: 'America/Lima' }).format(value),
     date: new Intl.DateTimeFormat('es-PE', { day: 'numeric', month: 'short', timeZone: 'America/Lima' }).format(value),
   };
 }
 
 export function WeatherPanel({ days }: { days: WeatherForecast[] }) {
-  const today = days[0];
-  return <section className="weather-panel" aria-labelledby="weather-title">
-    <div className="section-heading"><div><p className="eyebrow">Pronóstico meteorológico</p><h2 id="weather-title">Condiciones para planificar la visita</h2><p>Consulta el clima previsto para la catarata y anticipa necesidades de atención y seguridad.</p></div><span className="source-pill">Datos servidos por el backend</span></div>
-    {today && <aside className="weather-highlight"><div><p className="eyebrow">Condición de hoy</p><h3>{weatherLabel(today.weather_code)}</h3><p>{rainAdvice(today)}</p></div><dl className="weather-highlight-metrics"><div><dt>Máxima</dt><dd>{Math.round(today.temperature_max)} °C</dd></div><div><dt>Probabilidad</dt><dd>{Math.round(today.precipitation_probability)}%</dd></div><div><dt>Precipitación</dt><dd>{today.precipitation_mm.toFixed(1)} mm</dd></div></dl></aside>}
-    <div className="weather-table-wrap"><table className="weather-table"><thead><tr><th>Día</th><th>Condición</th><th>Máxima</th><th>Lluvia</th><th>Recomendación</th></tr></thead><tbody>
-      {days.map((day, index) => {
+  const todayDate = limaDate();
+  const tomorrowDate = limaDate(new Date(Date.now() + 86_400_000));
+  const today = days.find((day) => day.date === todayDate) ?? days[0];
+  if (!today) return null;
+  const scene = weatherScene(today.weather_code);
+
+  return <section className={`weather-panel weather-panel-visual weather-scene-${scene}`} aria-labelledby="weather-title">
+    <div className="weather-panel-title"><h2 id="weather-title">Pronóstico del clima</h2><span>Semana en curso</span></div>
+    <div className="weather-day-rail" aria-label="Clima de la semana en curso">
+      {days.slice(0, 7).map((day) => {
         const date = displayDay(day.date);
-        return <tr key={day.date} className={index === 0 ? 'today-row' : ''}>
-          <td><b>{index === 0 ? 'Hoy' : date.day}</b><span>{date.date}</span></td>
-          <td><span className="condition">{weatherLabel(day.weather_code)}</span></td>
-          <td>{Math.round(day.temperature_max)} °C</td>
-          <td><b>{Math.round(day.precipitation_probability)}%</b><span>{day.precipitation_mm.toFixed(1)} mm</span></td>
-          <td className="weather-advice">{rainAdvice(day)}</td>
-        </tr>;
+        const isToday = day.date === todayDate;
+        const label = isToday ? 'Hoy' : day.date === tomorrowDate ? 'Mañana' : date.day;
+        return <article key={day.date} className={`weather-day ${isToday ? 'today' : ''}`}>
+          <div className="weather-day-content">
+            <p className="weather-day-name">{label}</p>
+            <span>{date.date}</span>
+            <span className="weather-icon"><WeatherIcon code={day.weather_code} /></span>
+            <b>{weatherLabel(day.weather_code)}</b>
+            <strong>{Math.round(day.temperature_max)}°</strong>
+            <small>{day.observed ? `Observado · ${day.precipitation_mm.toFixed(1)} mm` : `${Math.round(day.precipitation_probability ?? 0)}% · ${day.precipitation_mm.toFixed(1)} mm`}</small>
+          </div>
+        </article>;
       })}
-    </tbody></table></div>
+    </div>
   </section>;
 }

@@ -9,17 +9,17 @@ describe('PredictionCard', () => {
     expect(screen.queryByText('posibles consumidores')).toBeNull();
   });
 
-  it('shows a persisted prediction and its weather', () => {
+  it('shows the demand estimate without repeating weather details', () => {
     render(<PredictionCard title="Mañana" loading={false} data={{ prediction_date: '2026-10-07', estimated_visitors: 38, score: 71, level: 'ALTA', model_version: 'baseline-1.0', temperature_max: 31, precipitation_probability: 30, precipitation_mm: 1.2, weather_code: 3 }} />);
-    expect(screen.getByText('38')).toBeTruthy();
-    expect(screen.getByText('Temperatura máxima')).toBeTruthy();
-    expect(screen.getByText('31 °C')).toBeTruthy();
-    expect(screen.getByText('Nublado')).toBeTruthy();
-    expect(screen.getByText('1.2 mm')).toBeTruthy();
+    expect(screen.getAllByText('38').length).toBeGreaterThan(0);
+    expect(screen.getByText('Prepara mayor stock y personal para atender la demanda.')).toBeTruthy();
+    expect(screen.queryByText('Temperatura máxima')).toBeNull();
+    expect(screen.queryByText('Probabilidad de lluvia')).toBeNull();
   });
 
-  it('explains when the prediction has no weather context', () => {
+  it('does not depend on weather context to explain the demand estimate', () => {
     render(<PredictionCard title="Hoy" loading={false} data={{ prediction_date: '2026-10-07', estimated_visitors: 38, score: 71, level: 'ALTA', model_version: 'baseline-1.0' }} />);
-    expect(screen.getByText('El contexto climático para esta fecha aún no está disponible.')).toBeTruthy();
+    expect(screen.getAllByText('38').length).toBeGreaterThan(0);
+    expect(screen.queryByText('El contexto climático para esta fecha aún no está disponible.')).toBeNull();
   });
 });

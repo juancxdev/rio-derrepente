@@ -8,6 +8,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
     "react": "latest",
     "react-dom": "latest"
   },
