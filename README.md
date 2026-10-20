@@ -28,6 +28,48 @@ Se configuran con `FRONTEND_HOST_PORT`, `API_HOST_PORT`, `ML_HOST_PORT` y `RABBI
 
 Los servicios `api`, `ml-service`, `frontend` y `worker` declaran un `healthcheck` en `docker-compose.yml`. La API y el servicio ML exponen `/health`; el frontend se comprueba contra `/` y el worker contra su proceso principal. Coolify usa estos checks al desplegar el Compose.
 
+## Monitoreo local
+
+El stack de observabilidad se levanta aparte y se conecta a la red del proyecto para no publicar API, ML ni PostgreSQL. Guía completa: [`monitoring/README.md`](monitoring/README.md).
+
+```bash
+# 1. Levantar la aplicación y el monitoreo
+./scripts/deploy.sh
+./scripts/monitoring-up.sh
+
+# 2. Crear una sola vez el tenant, sitio y usuario de pruebas
+./scripts/loadtest-setup.py
+```
+
+Abre Grafana en `http://127.0.0.1:13000` con el usuario `admin`. La contraseña está en `.env.monitoring`:
+
+```bash
+grep '^GRAFANA_ADMIN_PASSWORD=' .env.monitoring | cut -d= -f2-
+```
+
+Deja abierto el dashboard **Afluencia · Pruebas k6** y ejecuta una prueba desde otra terminal:
+
+```bash
+./scripts/load-test.sh smoke-api.js   # 1 iteración, valida login y endpoints
+./scripts/load-test.sh load-api.js    # 4 min, hasta 25 usuarios
+./scripts/load-test.sh stress-api.js  # 4 min 30 s, hasta 150 usuarios
+```
+
+Si solo quieres comprobar que el monitoreo está conectado, usa `./scripts/load-test.sh smoke-health.js`; no necesita credenciales.
+
+Los dashboards se actualizan cada 5 segundos. Al terminar, detén el monitoreo con `./scripts/monitoring-down.sh`.
+
+| Servicio | URL local |
+|---|---|
+| Grafana | `http://127.0.0.1:13000` |
+| Contenedores y host | `http://127.0.0.1:13000/d/afluencia-overview` |
+| Pruebas k6 | `http://127.0.0.1:13000/d/afluencia-k6` |
+| Logs | `http://127.0.0.1:13000/d/afluencia-logs` |
+| Prometheus | `http://127.0.0.1:13090` |
+| Alloy UI | `http://127.0.0.1:13001` |
+
+Consulta [`tests/k6/README.md`](tests/k6/README.md) para ejecutar las pruebas desde el host o contra Coolify.
+
 No hay contraseña de super administrador por defecto. El acceso inicial se crea o se rota con `adminctl`, que solicita la contraseña de forma oculta y la guarda solo como hash bcrypt:
 
 ```bash

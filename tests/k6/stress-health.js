@@ -1,7 +1,7 @@
 import http from 'k6/http';
 import { check } from 'k6';
 
-const baseURL = (__ENV.BASE_URL || 'http://127.0.0.1:3000').replace(/\/$/, '');
+const baseURL = (__ENV.BASE_URL || 'http://127.0.0.1:12000').replace(/\/$/, '');
 const path = __ENV.TARGET_PATH || '/health';
 
 export const options = {

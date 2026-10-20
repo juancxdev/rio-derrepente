@@ -1,4 +1,6 @@
 .env
+.env.monitoring
+.env.loadtest
 .local/
 __pycache__/
 .pytest_cache/

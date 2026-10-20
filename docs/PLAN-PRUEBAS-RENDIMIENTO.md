@@ -158,3 +158,14 @@ Cuando se implemente esta etapa, el repositorio debe incluir:
 - Umbrales definidos para p95 y tasa de errores.
 - Instrucciones de ejecución y formato de reporte.
 - Configuración de monitoreo para correlacionar los resultados de k6 con el estado de los servicios.
+
+## Implementación actual
+
+Ya están disponibles las pruebas de smoke, carga y estrés sobre el flujo autenticado del dashboard:
+
+- `tests/k6/smoke-api.js`: valida login, fixture y endpoints de lectura.
+- `tests/k6/load-api.js`: carga normal con hasta 25 VUs.
+- `tests/k6/stress-api.js`: estrés progresivo con hasta 150 VUs.
+- `tests/k6/*-health.js`: comprobaciones de infraestructura sin credenciales.
+
+El fixture se crea con `./scripts/loadtest-setup.py` y las credenciales quedan en `.env.loadtest`. La ejecución, variables y umbrales están documentados en [`tests/k6/README.md`](../tests/k6/README.md). Las pruebas de spike y soak siguen pendientes.

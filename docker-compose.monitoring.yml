@@ -1,0 +1,199 @@
+name: tourism-monitoring
+
+# Observabilidad local. Se conecta a la red externa del stack principal para
+# poder resolver api, frontend y ml-service sin publicar sus puertos.
+#
+# Uso:
+#   ./scripts/monitoring-up.sh
+#   ./scripts/load-test.sh smoke-health.js
+#   ./scripts/monitoring-down.sh
+#
+# cAdvisor no se incluye por defecto: en Docker Desktop no puede leer el image
+# store de containerd y no expone métricas por contenedor. Telegraf usa la API
+# de Docker y funciona igual en macOS y Linux.
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.enable-remote-write-receiver"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "${MONITORING_BIND_ADDRESS:-127.0.0.1}:${MONITORING_PROMETHEUS_PORT:-13090}:9090"
+    depends_on:
+      telegraf:
+        condition: service_started
+      node-exporter:
+        condition: service_started
+      blackbox-exporter:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9090/-/healthy || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:11.5.2
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/overview.json
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "${MONITORING_BIND_ADDRESS:-127.0.0.1}:${MONITORING_GRAFANA_PORT:-13000}:3000"
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    networks:
+      - monitoring
+
+  loki:
+    image: grafana/loki:3.3.2
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - ./monitoring/loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3100/ready || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 60s
+    networks:
+      - monitoring
+
+  alloy:
+    image: grafana/alloy:v1.6.1
+    command:
+      - "run"
+      - "/etc/alloy/config.alloy"
+      - "--server.http.listen-addr=0.0.0.0:12345"
+    volumes:
+      - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy
+    ports:
+      - "${MONITORING_BIND_ADDRESS:-127.0.0.1}:${MONITORING_ALLOY_PORT:-13001}:12345"
+    depends_on:
+      loki:
+        condition: service_healthy
+    networks:
+      - monitoring
+
+  telegraf:
+    image: telegraf:1.32-alpine
+    # La imagen oficial baja privilegios a UID 100; se necesita root para leer
+    # el socket Docker en Docker Desktop.
+    user: root
+    entrypoint: ["/usr/bin/telegraf"]
+    command: ["--config", "/etc/telegraf/telegraf.conf"]
+    volumes:
+      - ./monitoring/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9273/metrics || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - monitoring
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.0
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/host/root"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9100/metrics || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - monitoring
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.25.0
+    command: ["--config.file=/etc/blackbox_exporter/config.yml"]
+    volumes:
+      - ./monitoring/blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9115/-/healthy || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - monitoring
+
+  k6:
+    image: grafana/k6:0.57.0
+    profiles: ["loadtest"]
+    environment:
+      BASE_URL: ${K6_BASE_URL:-http://frontend}
+      API_BASE_URL: ${K6_API_BASE_URL:-http://api:8080}
+      TARGET_PATH: ${K6_TARGET_PATH:-/health}
+      AUTH_TOKEN: ${K6_AUTH_TOKEN:-}
+      TEST_EMAIL: ${TEST_EMAIL:-}
+      TEST_PASSWORD: ${TEST_PASSWORD:-}
+      TEST_TENANT_ID: ${TEST_TENANT_ID:-}
+      TEST_SITE_ID: ${TEST_SITE_ID:-}
+      TEST_SITE_CODE: ${TEST_SITE_CODE:-}
+      PREDICTION_DATE: ${PREDICTION_DATE:-}
+      TARGET_DATE: ${TARGET_DATE:-}
+      INCLUDE_WEATHER: ${INCLUDE_WEATHER:-false}
+      WEATHER_DAYS: ${WEATHER_DAYS:-1}
+      LOAD_PEAK: ${LOAD_PEAK:-}
+      STRESS_PEAK: ${STRESS_PEAK:-}
+      STRESS_SLEEP: ${STRESS_SLEEP:-}
+      K6_PROMETHEUS_RW_SERVER_URL: http://prometheus:9090/api/v1/write
+      K6_PROMETHEUS_RW_TREND_STATS: p(95),p(99),avg,min,max
+      K6_PROMETHEUS_RW_PUSH_INTERVAL: 5s
+    volumes:
+      - ./tests/k6:/scripts:ro
+    command: ["run", "--out", "experimental-prometheus-rw", "/scripts/load-health.js"]
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    networks:
+      - monitoring
+
+volumes:
+  grafana-data:
+  prometheus-data:
+  loki-data:
+  alloy-data:
+
+networks:
+  monitoring:
+    name: ${APP_NETWORK:-proyecto-aplicaciones-para-la-nube_default}
+    external: true
