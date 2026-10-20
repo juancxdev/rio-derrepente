@@ -1,6 +1,6 @@
 import type { WeatherForecast } from '../types';
 import { Cloud, CloudFog, CloudLightning, CloudRain, CloudSnow, CloudSun, Sun } from '@phosphor-icons/react';
-import { limaDate } from '../time';
+import { dateInZone, addDays } from '../time';
 import { weatherLabel, weatherScene } from '../weatherPresentation';
 
 function WeatherIcon({ code }: { code: number }) {
@@ -16,17 +16,17 @@ function WeatherIcon({ code }: { code: number }) {
   }
 }
 
-function displayDay(date: string): { day: string; date: string } {
+function displayDay(date: string, timeZone: string): { day: string; date: string } {
   const value = new Date(`${date}T12:00:00Z`);
   return {
-    day: new Intl.DateTimeFormat('es-PE', { weekday: 'long', timeZone: 'America/Lima' }).format(value),
-    date: new Intl.DateTimeFormat('es-PE', { day: 'numeric', month: 'short', timeZone: 'America/Lima' }).format(value),
+    day: new Intl.DateTimeFormat('es-PE', { weekday: 'long', timeZone }).format(value),
+    date: new Intl.DateTimeFormat('es-PE', { day: 'numeric', month: 'short', timeZone }).format(value),
   };
 }
 
-export function WeatherPanel({ days }: { days: WeatherForecast[] }) {
-  const todayDate = limaDate();
-  const tomorrowDate = limaDate(new Date(Date.now() + 86_400_000));
+export function WeatherPanel({ days, timezone = 'America/Lima' }: { days: WeatherForecast[]; timezone?: string }) {
+  const todayDate = dateInZone(new Date(), timezone);
+  const tomorrowDate = addDays(todayDate, 1);
   const today = days.find((day) => day.date === todayDate) ?? days[0];
   if (!today) return null;
   const scene = weatherScene(today.weather_code);
@@ -35,7 +35,7 @@ export function WeatherPanel({ days }: { days: WeatherForecast[] }) {
     <div className="weather-panel-title"><h2 id="weather-title">Pronóstico del clima</h2><span>Semana en curso</span></div>
     <div className="weather-day-rail" aria-label="Clima de la semana en curso">
       {days.slice(0, 7).map((day) => {
-        const date = displayDay(day.date);
+        const date = displayDay(day.date, timezone);
         const isToday = day.date === todayDate;
         const label = isToday ? 'Hoy' : day.date === tomorrowDate ? 'Mañana' : date.day;
         return <article key={day.date} className={`weather-day ${isToday ? 'today' : ''}`}>

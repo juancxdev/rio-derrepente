@@ -2,19 +2,27 @@ package httpadapter
 
 import (
 	"context"
-	"errors"
-	"github.com/google/uuid"
-	"github.com/juancx/tourism-platform/backend/internal/adapters/logging"
-	"github.com/juancx/tourism-platform/backend/internal/adapters/postgres"
-	"github.com/juancx/tourism-platform/backend/internal/adapters/weather"
-	"github.com/juancx/tourism-platform/backend/internal/application"
-	"github.com/juancx/tourism-platform/backend/internal/domain/predictions"
-	"github.com/juancx/tourism-platform/backend/internal/domain/visits"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
+	authadapter "github.com/juancx/tourism-platform/backend/internal/adapters/auth"
+	"github.com/juancx/tourism-platform/backend/internal/adapters/logging"
+	"github.com/juancx/tourism-platform/backend/internal/adapters/postgres"
+	"github.com/juancx/tourism-platform/backend/internal/adapters/weather"
+	"github.com/juancx/tourism-platform/backend/internal/application"
+	"github.com/juancx/tourism-platform/backend/internal/domain/closures"
+	"github.com/juancx/tourism-platform/backend/internal/domain/identity"
+	"github.com/juancx/tourism-platform/backend/internal/domain/predictions"
+	"github.com/juancx/tourism-platform/backend/internal/domain/sites"
+	"github.com/juancx/tourism-platform/backend/internal/domain/tenants"
+	"github.com/juancx/tourism-platform/backend/internal/domain/tickets"
+	"github.com/juancx/tourism-platform/backend/internal/domain/visits"
 )
 
 type memoryVisits struct{ duplicate bool }
@@ -37,6 +45,51 @@ func (missingPredictions) FindByDate(context.Context, uuid.UUID, time.Time) (pre
 	return predictions.Prediction{}, postgres.ErrNotFound
 }
 
+type ticketingScopeStub struct {
+	owns      bool
+	sites     []sites.Site
+	closure   closures.Status
+	sold      []tickets.Ticket
+	lastKey   string
+	importErr error
+}
+
+func (s *ticketingScopeStub) CreateTenant(_ context.Context, t tenants.Tenant) (tenants.Tenant, error) {
+	return t, nil
+}
+func (s *ticketingScopeStub) CreateSite(_ context.Context, site sites.Site) (sites.Site, error) {
+	return site, nil
+}
+func (s *ticketingScopeStub) ListSites(context.Context, uuid.UUID) ([]sites.Site, error) {
+	return s.sites, nil
+}
+func (s *ticketingScopeStub) FindSite(_ context.Context, tenantID, siteID uuid.UUID) (sites.Site, error) {
+	if !s.owns {
+		return sites.Site{}, postgres.ErrScopeNotFound
+	}
+	return sites.Site{ID: siteID, TenantID: tenantID, Latitude: 12.34, Longitude: 56.78, Timezone: "America/New_York"}, nil
+}
+func (s *ticketingScopeStub) ScopeExists(context.Context, uuid.UUID, uuid.UUID) bool { return s.owns }
+func (s *ticketingScopeStub) CreateTickets(_ context.Context, tenantID, siteID uuid.UUID, day time.Time, quantity int, key string) ([]tickets.Ticket, error) {
+	s.lastKey = key
+	if s.sold != nil {
+		return s.sold, nil
+	}
+	out := make([]tickets.Ticket, quantity)
+	for i := range out {
+		out[i] = tickets.New(tenantID, siteID, day, uuid.NewString())
+	}
+	return out, nil
+}
+func (s *ticketingScopeStub) ImportHistorical(context.Context, uuid.UUID, uuid.UUID, string, []visits.Record) error {
+	return s.importErr
+}
+func (s *ticketingScopeStub) ClosureStatus(_ context.Context, _, _ uuid.UUID, day time.Time) (closures.Status, error) {
+	status := s.closure
+	status.Date = day.Format("2006-01-02")
+	return status, nil
+}
+
 type fixedWeather struct{}
 
 func (fixedWeather) Forecasts(_ context.Context, _ float64, _ float64, target time.Time, days int) ([]weather.Forecast, error) {
@@ -53,15 +106,284 @@ func (fixedWeather) Historical(_ context.Context, _ float64, _ float64, target t
 	}
 	return result, nil
 }
-func newTestAPI(duplicate bool) *API {
-	return New(application.NewRegisterVisitService(memoryVisits{duplicate}, noopPublisher{}), application.NewGetPredictionService(missingPredictions{}), fixedWeather{}, -9.295, -75.996, logging.New())
+
+type coordinatesWeather struct{ latitude, longitude float64 }
+
+func (w *coordinatesWeather) Forecasts(_ context.Context, latitude, longitude float64, target time.Time, days int) ([]weather.Forecast, error) {
+	w.latitude, w.longitude = latitude, longitude
+	return fixedWeather{}.Forecasts(context.Background(), latitude, longitude, target, days)
 }
-func TestForecastReturnsDashboardWeather(t *testing.T) {
-	a := newTestAPI(false).App()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/sites/11111111-1111-1111-1111-111111111111/weather/forecast?days=2", nil)
-	res, err := a.Test(req)
-	if err != nil || res.StatusCode != http.StatusOK {
-		t.Fatalf("want 200 got %v %v", res.StatusCode, err)
+func (w *coordinatesWeather) Historical(_ context.Context, latitude, longitude float64, target time.Time, days int) ([]weather.Forecast, error) {
+	w.latitude, w.longitude = latitude, longitude
+	return fixedWeather{}.Historical(context.Background(), latitude, longitude, target, days)
+}
+
+type passwordStub struct{}
+
+func (passwordStub) Hash(plain string) (string, error) { return "hash:" + plain, nil }
+func (passwordStub) Verify(hash, plain string) bool   { return hash == "hash:"+plain }
+
+type identityStub struct {
+	user       identity.User
+	membership identity.Membership
+}
+
+func (s identityStub) FindUserByEmail(_ context.Context, email string) (identity.User, error) {
+	if strings.EqualFold(email, s.user.Email) {
+		return s.user, nil
+	}
+	return identity.User{}, identity.ErrUserNotFound
+}
+func (s identityStub) FindUserByID(_ context.Context, id uuid.UUID) (identity.User, error) {
+	if id == s.user.ID {
+		return s.user, nil
+	}
+	return identity.User{}, identity.ErrUserNotFound
+}
+func (s identityStub) Memberships(context.Context, uuid.UUID) ([]identity.Membership, error) {
+	return []identity.Membership{s.membership}, nil
+}
+func (s identityStub) Membership(_ context.Context, userID, tenantID uuid.UUID) (identity.Membership, error) {
+	if userID == s.membership.UserID && tenantID == s.membership.TenantID {
+		return s.membership, nil
+	}
+	return identity.Membership{}, identity.ErrMembershipNotFound
+}
+func (s identityStub) UpsertUser(_ context.Context, user identity.User) (identity.User, error) {
+	return user, nil
+}
+func (s identityStub) UpsertMembership(context.Context, identity.Membership) error { return nil }
+
+type authFixture struct {
+	app      *fiber.App
+	ticketing *ticketingScopeStub
+	tokens   authadapter.TokenManager
+	userID   uuid.UUID
+	tenantID uuid.UUID
+	email    string
+	password string
+}
+
+func newAuthFixture(active bool, role identity.Role, owns bool) *authFixture {
+	userID, tenantID := uuid.New(), uuid.New()
+	repo := identityStub{
+		user:       identity.User{ID: userID, Email: "operador@example.com", DisplayName: "Operador", PasswordHash: "hash:clave-segura", Active: active},
+		membership: identity.Membership{UserID: userID, TenantID: tenantID, TenantName: "Operador turístico", Role: role},
+	}
+	tokens := authadapter.TokenManager{Secret: []byte("test-secret"), TTL: time.Hour}
+	ticketing := &ticketingScopeStub{owns: owns, sites: []sites.Site{{ID: uuid.New(), TenantID: tenantID, Code: "derrepente", Name: "Catarata", Timezone: "America/Lima"}}}
+	service := application.NewAuthService(repo, ticketing, passwordStub{}, tokens, time.Hour)
+	app := New(application.NewRegisterVisitService(memoryVisits{}, noopPublisher{}), application.NewGetPredictionService(missingPredictions{}), fixedWeather{}, -9.295, -75.996, logging.New()).
+		WithTicketing(application.NewTicketingService(ticketing)).
+		WithAuth(service, tokens).
+		WithClosureHour(18).
+		App()
+	return &authFixture{app: app, ticketing: ticketing, tokens: tokens, userID: userID, tenantID: tenantID, email: "operador@example.com", password: "clave-segura"}
+}
+
+func (f *authFixture) token(t *testing.T) string {
+	t.Helper()
+	token, err := f.tokens.Issue(identity.Claims{UserID: f.userID, TenantID: f.tenantID, Role: identity.RoleManager, ExpiresAt: time.Now().Add(time.Hour).Unix()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return token
+}
+
+func (f *authFixture) do(method, path, body, token string) *http.Response {
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	res, err := f.app.Test(req, -1)
+	if err != nil {
+		panic(err)
+	}
+	return res
+}
+
+func decodeBody(t *testing.T, res *http.Response) string {
+	t.Helper()
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(body)
+}
+
+func TestLoginReturnsUserTenantAndSites(t *testing.T) {
+	f := newAuthFixture(true, identity.RoleManager, true)
+	res := f.do(http.MethodPost, "/api/v1/auth/login", `{"email":"`+f.email+`","password":"`+f.password+`"}`, "")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", res.StatusCode, decodeBody(t, res))
+	}
+	body := decodeBody(t, res)
+	if !strings.Contains(body, "access_token") || !strings.Contains(body, "Operador turístico") || !strings.Contains(body, "closure_hour") {
+		t.Fatalf("session response is incomplete: %s", body)
+	}
+}
+
+func TestLoginRejectsWrongPasswordWithoutASession(t *testing.T) {
+	f := newAuthFixture(true, identity.RoleManager, true)
+	res := f.do(http.MethodPost, "/api/v1/auth/login", `{"email":"`+f.email+`","password":"nope"}`, "")
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d", res.StatusCode)
+	}
+	if strings.Contains(decodeBody(t, res), "access_token") {
+		t.Fatal("a failed login must not return a token")
+	}
+}
+
+func TestLoginRejectsAnInactiveUser(t *testing.T) {
+	f := newAuthFixture(false, identity.RoleManager, true)
+	res := f.do(http.MethodPost, "/api/v1/auth/login", `{"email":"`+f.email+`","password":"`+f.password+`"}`, "")
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("want 403, got %d: %s", res.StatusCode, decodeBody(t, res))
+	}
+}
+
+func TestProtectedRouteRequiresAToken(t *testing.T) {
+	f := newAuthFixture(true, identity.RoleManager, true)
+	res := f.do(http.MethodGet, "/api/v1/tenants/"+f.tenantID.String()+"/sites", "", "")
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d", res.StatusCode)
+	}
+}
+
+func TestExpiredTokenIsRejected(t *testing.T) {
+	f := newAuthFixture(true, identity.RoleManager, true)
+	token, err := f.tokens.Issue(identity.Claims{UserID: f.userID, TenantID: f.tenantID, Role: identity.RoleManager, ExpiresAt: time.Now().Add(-time.Minute).Unix()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := f.do(http.MethodGet, "/api/v1/tenants/"+f.tenantID.String()+"/sites", "", token)
+	if res.StatusCode != http.StatusUnauthorized || !strings.Contains(decodeBody(t, res), "token_expired") {
+		t.Fatalf("want 401 token_expired, got %d", res.StatusCode)
+	}
+}
+
+func TestTenantPathCannotEscapeTheTokenTenant(t *testing.T) {
+	f := newAuthFixture(true, identity.RoleManager, true)
+	res := f.do(http.MethodGet, "/api/v1/tenants/"+uuid.NewString()+"/sites", "", f.token(t))
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("want 404 for another tenant, got %d", res.StatusCode)
+	}
+}
+
+func TestOperatorCannotCreateSites(t *testing.T) {
+	f := newAuthFixture(true, identity.RoleOperator, true)
+	token, err := f.tokens.Issue(identity.Claims{UserID: f.userID, TenantID: f.tenantID, Role: identity.RoleOperator, ExpiresAt: time.Now().Add(time.Hour).Unix()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := f.do(http.MethodPost, "/api/v1/tenants/"+f.tenantID.String()+"/sites", `{"name":"Otro","code":"otro","timezone":"America/Lima","latitude":-9,"longitude":-76}`, token)
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("want 403, got %d: %s", res.StatusCode, decodeBody(t, res))
+	}
+}
+
+func TestManagerCanListItsOwnSites(t *testing.T) {
+	f := newAuthFixture(true, identity.RoleManager, true)
+	res := f.do(http.MethodGet, "/api/v1/tenants/"+f.tenantID.String()+"/sites", "", f.token(t))
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", res.StatusCode)
+	}
+}
+
+func TestScopedForecastRejectsASiteOutsideTheTenant(t *testing.T) {
+	f := newAuthFixture(true, identity.RoleManager, false)
+	res := f.do(http.MethodGet, "/api/v1/tenants/"+f.tenantID.String()+"/sites/"+uuid.NewString()+"/weather/forecast", "", f.token(t))
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("want 404 for a site outside the tenant, got %d: %s", res.StatusCode, decodeBody(t, res))
+	}
+}
+
+func TestScopedForecastUsesOwnedSiteCoordinates(t *testing.T) {
+	f := newAuthFixture(true, identity.RoleManager, true)
+	provider := &coordinatesWeather{}
+	app := New(application.NewRegisterVisitService(memoryVisits{}, noopPublisher{}), application.NewGetPredictionService(missingPredictions{}), provider, -9.295, -75.996, logging.New()).
+		WithTicketing(application.NewTicketingService(f.ticketing)).
+		WithAuth(application.NewAuthService(identityStub{
+			user:       identity.User{ID: f.userID, Email: f.email, Active: true, PasswordHash: "hash:" + f.password},
+			membership: identity.Membership{UserID: f.userID, TenantID: f.tenantID, TenantName: "Operador turístico", Role: identity.RoleManager},
+		}, f.ticketing, passwordStub{}, f.tokens, time.Hour), f.tokens).
+		App()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tenants/"+f.tenantID.String()+"/sites/"+uuid.NewString()+"/weather/forecast?days=1", nil)
+	req.Header.Set("Authorization", "Bearer "+f.token(t))
+	res, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusOK || provider.latitude != 12.34 || provider.longitude != 56.78 {
+		t.Fatalf("scoped forecast must use site coordinates, got status=%v coords=%v,%v", res.StatusCode, provider.latitude, provider.longitude)
+	}
+}
+
+func TestSellTicketsReturnsCodesAndForwardsTheIdempotencyKey(t *testing.T) {
+	f := newAuthFixture(true, identity.RoleManager, true)
+	siteID := f.ticketing.sites[0].ID
+	path := "/api/v1/tenants/" + f.tenantID.String() + "/sites/" + siteID.String() + "/tickets"
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"quantity":2}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+f.token(t))
+	req.Header.Set("Idempotency-Key", "double-click-1")
+	res, err := f.app.Test(req, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("want 201, got %d: %s", res.StatusCode, decodeBody(t, res))
+	}
+	if f.ticketing.lastKey != "double-click-1" {
+		t.Fatalf("idempotency key was not forwarded: %q", f.ticketing.lastKey)
+	}
+	if !strings.Contains(decodeBody(t, res), "codes") {
+		t.Fatal("sale response must include codes")
+	}
+}
+
+func TestSellTicketsValidatesQuantityAndLocalDay(t *testing.T) {
+	f := newAuthFixture(true, identity.RoleManager, true)
+	path := "/api/v1/tenants/" + f.tenantID.String() + "/sites/" + f.ticketing.sites[0].ID.String() + "/tickets"
+	for _, body := range []string{`{"quantity":0}`, `{"quantity":101}`, `{"quantity":1,"issued_for":"2020-01-01"}`} {
+		res := f.do(http.MethodPost, path, body, f.token(t))
+		if res.StatusCode != http.StatusUnprocessableEntity {
+			t.Fatalf("body %s: want 422, got %d: %s", body, res.StatusCode, decodeBody(t, res))
+		}
+	}
+}
+
+func TestClosureStatusIsTenantScopedAndReportsProcessing(t *testing.T) {
+	f := newAuthFixture(true, identity.RoleManager, true)
+	f.ticketing.closure = closures.Status{Closed: true, Tickets: 4, PredictionAvailable: false}
+	day := time.Now().In(time.FixedZone("America/Lima", -5*3600)).Format("2006-01-02")
+	res := f.do(http.MethodGet, "/api/v1/tenants/"+f.tenantID.String()+"/sites/"+f.ticketing.sites[0].ID.String()+"/closures/"+day, "", f.token(t))
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", res.StatusCode, decodeBody(t, res))
+	}
+	body := decodeBody(t, res)
+	if !strings.Contains(body, `"status":"processing"`) || !strings.Contains(body, `"tickets":4`) {
+		t.Fatalf("unexpected closure body: %s", body)
+	}
+}
+
+func TestMeReturnsTheAuthenticatedIdentity(t *testing.T) {
+	f := newAuthFixture(true, identity.RoleManager, true)
+	res := f.do(http.MethodGet, "/api/v1/auth/me", "", f.token(t))
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", res.StatusCode)
+	}
+	if !strings.Contains(decodeBody(t, res), "Operador turístico") {
+		t.Fatal("me must hydrate the tenant")
+	}
+}
+
+func TestLegacyRoutesAreDisabledByDefault(t *testing.T) {
+	f := newAuthFixture(true, identity.RoleManager, true)
+	res := f.do(http.MethodGet, "/api/v1/sites/"+uuid.NewString()+"/weather/forecast", "", f.token(t))
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("legacy routes must stay disabled, got %d", res.StatusCode)
 	}
 }
 
@@ -80,49 +402,17 @@ func TestCalendarWeekStartsOnMondayAndEndsOnSunday(t *testing.T) {
 }
 
 func TestForecastRejectsAnUnsupportedNumberOfDays(t *testing.T) {
-	a := newTestAPI(false).App()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/sites/11111111-1111-1111-1111-111111111111/weather/forecast?days=8", nil)
-	res, err := a.Test(req)
-	if err != nil || res.StatusCode != http.StatusUnprocessableEntity {
-		t.Fatalf("want 422 got %v %v", res.StatusCode, err)
-	}
-}
-func TestCreateVisitRejectsInconsistentCounts(t *testing.T) {
-	a := newTestAPI(false).App()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/sites/11111111-1111-1111-1111-111111111111/visits", strings.NewReader(`{"visit_date":"2026-10-01","local_visitors":1,"national_visitors":0,"foreign_visitors":0,"total_visitors":2}`))
-	req.Header.Set("Content-Type", "application/json")
-	res, err := a.Test(req)
-	if err != nil || res.StatusCode != 422 {
-		t.Fatalf("want 422 got %v %v", res.StatusCode, err)
+	f := newAuthFixture(true, identity.RoleManager, true)
+	res := f.do(http.MethodGet, "/api/v1/tenants/"+f.tenantID.String()+"/sites/"+f.ticketing.sites[0].ID.String()+"/weather/forecast?days=8", "", f.token(t))
+	if res.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("want 422 got %v", res.StatusCode)
 	}
 }
 
-func TestCreateVisitAcceptsValidRecord(t *testing.T) {
-	a := newTestAPI(false).App()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/sites/11111111-1111-1111-1111-111111111111/visits", strings.NewReader(`{"visit_date":"2026-10-01","local_visitors":1,"national_visitors":1,"foreign_visitors":0,"total_visitors":2}`))
-	req.Header.Set("Content-Type", "application/json")
-	res, err := a.Test(req)
-	if err != nil || res.StatusCode != http.StatusCreated {
-		t.Fatalf("want 201 got %v %v", res.StatusCode, err)
-	}
-}
-func TestCreateVisitReturnsConflictForDuplicate(t *testing.T) {
-	a := newTestAPI(true).App()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/sites/11111111-1111-1111-1111-111111111111/visits", strings.NewReader(`{"visit_date":"2026-10-01","local_visitors":1,"national_visitors":0,"foreign_visitors":0,"total_visitors":1}`))
-	req.Header.Set("Content-Type", "application/json")
-	res, err := a.Test(req)
-	if err != nil || res.StatusCode != 409 {
-		t.Fatalf("want 409 got %v %v", res.StatusCode, err)
-	}
-}
-func TestPredictionNotFoundDoesNotCallML(t *testing.T) {
-	a := newTestAPI(false).App()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/sites/11111111-1111-1111-1111-111111111111/predictions/2026-10-02", nil)
-	res, err := a.Test(req)
-	if err != nil || res.StatusCode != 404 {
-		t.Fatalf("want 404 got %v %v", res.StatusCode, err)
-	}
-	if !errors.Is(postgres.ErrNotFound, postgres.ErrNotFound) {
-		t.Fatal("sanity")
+func TestInvalidJSONOnLoginIsRejected(t *testing.T) {
+	f := newAuthFixture(true, identity.RoleManager, true)
+	res := f.do(http.MethodPost, "/api/v1/auth/login", `{"email":`, "")
+	if res.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("want 422, got %d", res.StatusCode)
 	}
 }

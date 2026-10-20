@@ -7,9 +7,9 @@ from app.domain.prediction import Prediction
 def connection():
     return psycopg.connect(os.environ["DATABASE_URL"])
 
-def historical_monthly_average(site_id: str, target: date) -> tuple[float, float]:
+def historical_monthly_average(tenant_id: str, site_id: str, target: date) -> tuple[float, float]:
     with connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT COALESCE(AVG(total_visitors), 0), COALESCE(MAX(total_visitors), 1) FROM visit_records WHERE site_id=%s AND EXTRACT(MONTH FROM visit_date)=EXTRACT(MONTH FROM %s::date)", (site_id, target))
+        cur.execute("SELECT COALESCE(AVG(total_visitors), 0), COALESCE(MAX(total_visitors), 1) FROM visit_records WHERE tenant_id=%s AND site_id=%s AND EXTRACT(MONTH FROM visit_date)=EXTRACT(MONTH FROM %s::date)", (tenant_id, site_id, target))
         average, maximum = cur.fetchone()
         return float(average), float(maximum)
 

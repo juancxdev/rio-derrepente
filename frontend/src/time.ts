@@ -1,17 +1,35 @@
-export function limaDate(value = new Date()): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(value);
+export const DEFAULT_TIMEZONE = 'America/Lima';
+export const DEFAULT_CLOSURE_HOUR = 18;
+
+export function dateInZone(value = new Date(), timeZone = DEFAULT_TIMEZONE): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(value);
 }
 
-export function isRegistrationOpen(value = new Date()): boolean {
-  const hour = Number(new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Lima',
+export function hourInZone(value = new Date(), timeZone = DEFAULT_TIMEZONE): number {
+  return Number(new Intl.DateTimeFormat('en-US', {
+    timeZone,
     hour: '2-digit',
     hourCycle: 'h23',
   }).format(value));
-  // Excepción de demostración: solo el 06/10/2026 el cierre se adelanta a las 14:00.
-  // Desde el día siguiente, la regla operativa vuelve automáticamente a las 18:00.
-  const openingHour = limaDate(value) === '2026-10-06' ? 14 : 18;
-  return hour >= openingHour;
+}
+
+export function isRegistrationOpen(value = new Date(), timeZone = DEFAULT_TIMEZONE, closureHour = DEFAULT_CLOSURE_HOUR): boolean {
+  return hourInZone(value, timeZone) >= closureHour;
+}
+
+export function addDays(date: string, amount: number): string {
+  const value = new Date(`${date}T12:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + amount);
+  return value.toISOString().slice(0, 10);
+}
+
+export function formatLongDate(date: string, timeZone = DEFAULT_TIMEZONE): string {
+  return new Intl.DateTimeFormat('es-PE', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone,
+  }).format(new Date(`${date}T12:00:00Z`));
 }
 
 export type DailyCycle = {
@@ -19,17 +37,22 @@ export type DailyCycle = {
   tomorrow: string;
   registrationOpen: boolean;
   canShowTomorrow: boolean;
+  closureHour: number;
 };
 
-export function dailyCycle(value = new Date(), registeredVisitDate: string | null = null): DailyCycle {
-  const today = limaDate(value);
-  const tomorrowValue = new Date(value);
-  tomorrowValue.setDate(tomorrowValue.getDate() + 1);
-  const registrationOpen = isRegistrationOpen(value);
+// The destination timezone and closure hour come from the backend session,
+// so the UI never hardcodes Lima or a 18:00 window.
+export function dailyCycle(value = new Date(), timeZone = DEFAULT_TIMEZONE, closureHour = DEFAULT_CLOSURE_HOUR): DailyCycle {
+  const today = dateInZone(value, timeZone);
+  const registrationOpen = isRegistrationOpen(value, timeZone, closureHour);
   return {
     today,
-    tomorrow: limaDate(tomorrowValue),
+    tomorrow: addDays(today, 1),
     registrationOpen,
-    canShowTomorrow: registrationOpen && registeredVisitDate === today,
+    // The Worker publishes tomorrow's prediction only after the closure.
+    canShowTomorrow: registrationOpen,
+    closureHour,
   };
 }
+
+export const limaDate = (value = new Date()) => dateInZone(value, DEFAULT_TIMEZONE);

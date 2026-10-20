@@ -18,5 +18,5 @@ if [ "${APP_SEED_DEMO:-false}" = "true" ]; then
   docker compose --profile demo run --rm seed-demo
 fi
 
-docker compose up -d --build --remove-orphans api ml-service frontend
+docker compose up -d --build --remove-orphans api worker ml-service frontend
 docker compose ps

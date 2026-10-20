@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/juancx/tourism-platform/backend/internal/application"
 	"github.com/juancx/tourism-platform/backend/internal/domain/visits"
 	"github.com/rabbitmq/amqp091-go"
 )
 
 const Queue = "visit-record-created"
+const DailyClosureQueue = "daily-closure"
 
 type Publisher struct {
 	conn *amqp091.Connection
@@ -38,7 +40,19 @@ func New(url string) (*Publisher, error) {
 		c.Close()
 		return nil, err
 	}
+	if _, err = ch.QueueDeclare(DailyClosureQueue, true, false, false, false, nil); err != nil {
+		ch.Close()
+		c.Close()
+		return nil, err
+	}
 	return &Publisher{conn: c, ch: ch}, nil
+}
+func (p *Publisher) PublishDailyClosure(ctx context.Context, event application.DailyClosureEvent) error {
+	b, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	return p.ch.PublishWithContext(ctx, "", DailyClosureQueue, false, false, amqp091.Publishing{DeliveryMode: amqp091.Persistent, ContentType: "application/json", Body: b})
 }
 func (p *Publisher) Close() {
 	if p.ch != nil {

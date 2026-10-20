@@ -10,6 +10,7 @@ logging.basicConfig(level=logging.INFO, format='{"timestamp":"%(asctime)s","leve
 app = FastAPI(title="Tourism ML Service", version="1.0.0")
 
 class PredictRequest(BaseModel):
+    tenant_id: str
     site_id: str
     prediction_date: date
 
@@ -24,6 +25,6 @@ def health() -> dict:
 
 @app.post("/internal/predictions")
 def predict(request: PredictRequest) -> dict:
-    value = generate(request.site_id, request.prediction_date)
+    value = generate(request.tenant_id, request.site_id, request.prediction_date)
     return {"estimated_visitors": value.estimated_visitors, "score": value.score, "level": value.level, "model_version": value.model_version}
 

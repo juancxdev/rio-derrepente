@@ -1,0 +1,3 @@
+-- Intencionalmente irreversible: una reversión destructiva eliminaría tickets,
+-- cierres y datos históricos que deben sobrevivir a un despliegue. Las
+-- migraciones de corrección futuras deben ser aditivas.
