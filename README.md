@@ -26,6 +26,8 @@ Los puertos publicados en el host están reservados en el rango `12000` para evi
 
 Se configuran con `FRONTEND_HOST_PORT`, `API_HOST_PORT`, `ML_HOST_PORT` y `RABBITMQ_MANAGEMENT_HOST_PORT`.
 
+Los servicios `api`, `ml-service`, `frontend` y `worker` declaran un `healthcheck` en `docker-compose.yml`. La API y el servicio ML exponen `/health`; el frontend se comprueba contra `/` y el worker contra su proceso principal. Coolify usa estos checks al desplegar el Compose.
+
 No hay contraseña de super administrador por defecto. El acceso inicial se crea o se rota con `adminctl`, que solicita la contraseña de forma oculta y la guarda solo como hash bcrypt:
 
 ```bash

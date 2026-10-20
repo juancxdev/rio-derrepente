@@ -82,6 +82,12 @@ services:
         condition: service_healthy
     ports:
       - "${API_HOST_PORT:-12001}:${API_PORT:-8080}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 
   ml-service:
     build: ./ml-service
@@ -97,6 +103,12 @@ services:
         condition: service_healthy
     ports:
       - "${ML_HOST_PORT:-12002}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   worker:
     build: ./backend
@@ -113,6 +125,12 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "grep -aq tourism-worker /proc/1/cmdline || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 
   frontend:
     build: ./frontend
@@ -120,6 +138,12 @@ services:
       - api
     ports:
       - "${FRONTEND_HOST_PORT:-12000}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
 volumes:
   postgres_data:
