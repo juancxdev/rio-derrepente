@@ -1,0 +1,62 @@
+flowchart LR
+    github[(GitHub\nrepo rio-derrepente)]
+    openmeteo["Open-Meteo\nAPI externa de clima"]
+
+    subgraph vps["VPS de producción — 69.164.247.232"]
+      subgraph coolify["Coolify — plataforma de orquestación"]
+        githubapp["Coolify GitHub App\nsource + webhook"]
+        proxy["Proxy Coolify\n:80 / :443"]
+
+        subgraph appnet["Red Docker interna — aplicación"]
+          compose["Docker Compose\ndefine y despliega el stack"]
+          frontend["Frontend\nNginx :80"]
+          api["API Go/Fiber\n:8080"]
+          postgres[("PostgreSQL\n:5432")]
+          rabbitmq{{"RabbitMQ\n:5672"}}
+          worker["Worker Go\ncierre diario"]
+          ml["ML Python\n:8000"]
+        end
+
+        subgraph monitoring["Red Docker interna — monitoring"]
+          grafana["Grafana\n:3000"]
+          prometheus["Prometheus\n:9090"]
+          loki["Loki\n:3100"]
+          alloy["Grafana Alloy\n:12345"]
+          cadvisor["cAdvisor\n:8080"]
+          nodeexporter["Node Exporter\n:9100"]
+        end
+      end
+    end
+
+    github -->|push / webhook| githubapp
+    githubapp -->|obtiene commit| compose
+    compose -. despliega .-> frontend
+    compose -. despliega .-> api
+    compose -. despliega .-> postgres
+    compose -. despliega .-> rabbitmq
+    compose -. despliega .-> worker
+    compose -. despliega .-> ml
+    proxy --> frontend
+    frontend --> api
+    api --> postgres
+    worker --> postgres
+    worker --> openmeteo
+    worker -. daily-closure .-> rabbitmq
+    rabbitmq --> ml
+    ml --> postgres
+    cadvisor -. métricas contenedores .-> prometheus
+    cadvisor -. observa contenedores .-> compose
+    nodeexporter -. métricas VPS .-> prometheus
+    alloy -. logs Docker .-> loki
+    alloy -. lee logs de .-> compose
+    prometheus -. consulta .-> grafana
+    loki -. logs .-> grafana
+
+    classDef source fill:#102a43,stroke:#55d6be,color:#f5fbff
+    classDef control fill:#241442,stroke:#a78bfa,color:#f8f7ff
+    classDef app fill:#132b2b,stroke:#45d483,color:#f5fffa
+    classDef monitor fill:#302314,stroke:#f2b84b,color:#fff9ed
+    class github source
+    class githubapp,proxy control
+    class frontend,api,postgres,rabbitmq,worker,ml app
+    class grafana,prometheus,loki,exporters monitor

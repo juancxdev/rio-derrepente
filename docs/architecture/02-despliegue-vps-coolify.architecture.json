@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Despliegue del VPS — Coolify, Docker, CI/CD y monitoreo",
+    "viewBox": [1360, 1120],
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "cicd", "label": "GitHub → GitHub App → Docker Compose", "focus": ["github", "github-source", "compose-runtime"], "note": "La integración GitHub App obtiene el commit y entrega el docker-compose.yml al runtime de la aplicación." },
+      { "id": "application", "label": "Aplicación", "focus": ["users", "proxy", "frontend", "api", "postgres", "worker", "rabbitmq", "ml", "meteo"], "note": "El API registra la venta presencial; el Worker consolida el cierre diario y solicita el entrenamiento asíncrono." },
+      { "id": "monitoring", "label": "Monitoreo", "focus": ["grafana", "prometheus", "loki", "alloy", "cadvisor", "node-exporter"], "note": "cAdvisor y Node Exporter generan métricas; Alloy transporta logs a Loki; Grafana consulta Prometheus y Loki." }
+    ]
+  },
+  "components": [
+    { "id": "github", "type": "external", "label": "GitHub", "sublabel": "repo rio-derrepente", "pos": [32, 470], "size": [160, 62] },
+    { "id": "github-source", "type": "cloud", "label": "Coolify GitHub App", "sublabel": "source + webhook", "pos": [250, 380], "size": [210, 62] },
+    { "id": "proxy", "type": "security", "label": "Proxy Coolify", "sublabel": "HTTP :80 / HTTPS :443", "pos": [250, 300], "size": [190, 62] },
+    { "id": "users", "type": "external", "label": "Usuarios + k6", "sublabel": "tráfico HTTP", "pos": [32, 300], "size": [160, 62] },
+    { "id": "compose-runtime", "type": "cloud", "label": "Docker Compose", "sublabel": "define y despliega el stack", "pos": [500, 500], "size": [220, 62] },
+    { "id": "frontend", "type": "frontend", "label": "Frontend", "sublabel": "Nginx · interno :80", "pos": [500, 300], "size": [160, 62] },
+    { "id": "api", "type": "backend", "label": "API Go/Fiber", "sublabel": "interno :8080", "pos": [710, 300], "size": [160, 62] },
+    { "id": "postgres", "type": "database", "label": "PostgreSQL", "sublabel": "interno :5432", "pos": [910, 230], "size": [170, 62] },
+    { "id": "rabbitmq", "type": "messagebus", "label": "RabbitMQ", "sublabel": "AMQP interno :5672", "pos": [910, 400], "size": [170, 62] },
+    { "id": "worker", "type": "backend", "label": "Worker Go", "sublabel": "cierre diario · interno", "pos": [740, 500], "size": [170, 62] },
+    { "id": "ml", "type": "backend", "label": "ML Python", "sublabel": "interno :8000", "pos": [1130, 400], "size": [170, 62] },
+    { "id": "meteo", "type": "cloud", "label": "Open-Meteo", "sublabel": "API externa de clima", "pos": [600, 90], "size": [180, 62] },
+    { "id": "cadvisor", "type": "cloud", "label": "cAdvisor", "sublabel": "métricas Docker :8080", "pos": [590, 680], "size": [190, 62] },
+    { "id": "node-exporter", "type": "cloud", "label": "Node Exporter", "sublabel": "métricas VPS :9100", "pos": [540, 870], "size": [190, 62] },
+    { "id": "prometheus", "type": "cloud", "label": "Prometheus", "sublabel": "interno :9090", "pos": [640, 770], "size": [170, 62] },
+    { "id": "grafana", "type": "cloud", "label": "Grafana", "sublabel": "público temporal :3000", "pos": [835, 770], "size": [190, 62] },
+    { "id": "loki", "type": "cloud", "label": "Loki", "sublabel": "almacena logs :3100", "pos": [1060, 770], "size": [190, 62] },
+    { "id": "alloy", "type": "cloud", "label": "Grafana Alloy", "sublabel": "recoge Docker logs :12345", "pos": [1045, 680], "size": [220, 62] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "VPS de producción — 69.164.247.232", "wraps": ["github-source", "compose-runtime", "proxy", "frontend", "api", "postgres", "rabbitmq", "worker", "ml", "grafana", "prometheus", "loki", "alloy", "cadvisor", "node-exporter"], "pad": 28 },
+    { "kind": "region", "label": "Coolify — orquestación", "wraps": ["github-source", "compose-runtime", "proxy", "frontend", "api", "postgres", "rabbitmq", "worker", "ml", "grafana", "prometheus", "loki", "alloy", "cadvisor", "node-exporter"], "pad": 14 },
+    { "kind": "security-group", "label": "Red Docker interna — aplicación", "wraps": ["compose-runtime", "frontend", "api", "postgres", "rabbitmq", "worker", "ml"], "pad": 16 },
+    { "kind": "security-group", "label": "Red Docker interna — monitoring", "wraps": ["grafana", "prometheus", "loki", "alloy", "cadvisor", "node-exporter"], "pad": 16 }
+  ],
+  "connections": [
+    { "from": "github", "to": "github-source", "variant": "emphasis", "fromSide": "right", "toSide": "left", "via": [[220, 501], [220, 411]] },
+    { "from": "github-source", "to": "compose-runtime", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "via": [[355, 470], [610, 470]] },
+    { "from": "users", "to": "proxy", "variant": "emphasis" },
+    { "from": "proxy", "to": "frontend", "variant": "security" },
+    { "from": "frontend", "to": "api", "variant": "emphasis" },
+    { "from": "api", "to": "postgres", "variant": "emphasis" },
+    { "from": "worker", "to": "postgres", "variant": "dashed", "fromSide": "right", "toSide": "bottom", "via": [[1320, 531], [1320, 312], [995, 312]] },
+    { "from": "worker", "to": "rabbitmq", "variant": "emphasis", "fromSide": "right", "toSide": "bottom", "via": [[930, 531], [930, 480], [995, 480]] },
+    { "from": "rabbitmq", "to": "ml", "variant": "emphasis" },
+    { "from": "ml", "to": "postgres", "variant": "emphasis", "fromSide": "top", "toSide": "top", "via": [[1215, 370], [1215, 190], [995, 190]] },
+    { "from": "worker", "to": "meteo", "variant": "dashed", "fromSide": "right", "toSide": "bottom", "via": [[1320, 531], [1320, 180], [690, 180]] },
+    { "from": "cadvisor", "to": "compose-runtime", "variant": "dashed", "fromSide": "top", "toSide": "bottom", "via": [[685, 600], [610, 600]] },
+    { "from": "cadvisor", "to": "prometheus", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "via": [[685, 750], [725, 750]] },
+    { "from": "node-exporter", "to": "prometheus", "variant": "dashed", "fromSide": "top", "toSide": "bottom", "via": [[635, 850], [725, 850]] },
+    { "from": "prometheus", "to": "grafana", "variant": "dashed" },
+    { "from": "alloy", "to": "compose-runtime", "variant": "dashed", "fromSide": "left", "toSide": "bottom", "via": [[950, 711], [950, 620], [610, 620]] },
+    { "from": "alloy", "to": "loki", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "route": "straight" },
+    { "from": "loki", "to": "grafana", "variant": "dashed" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Inventario de acceso y puertos", "items": ["VPS: 69.164.247.232; la IP puede cambiar sin Elastic IP", "Coolify: http://69.164.247.232:8000 (administración)", "Proxy público: 80/TCP y 443/TCP; debe ser la entrada preferida de la aplicación", "Dashboard de monitoreo: 3000/TCP durante la demostración; idealmente detrás del proxy", "SSH: 22/TCP para administración y despliegue; restringir por IP cuando sea posible", "No publicar PostgreSQL 5432, RabbitMQ 5672/15672, API 8080, ML 8000, Prometheus 9090 ni Loki 3100"] },
+    { "dot": "emerald", "title": "Qué corre dentro de Docker", "items": ["Coolify es el plano de control: crea y actualiza recursos, redes, variables, volúmenes y rutas", "Docker Engine es el runtime: allí se ejecutan los contenedores reales de aplicación y observabilidad", "Aplicación: frontend :80, API Go :8080, PostgreSQL :5432, RabbitMQ :5672, Worker Go y ML :8000", "Monitoreo: Grafana :3000, Prometheus :9090, Loki :3100, Alloy :12345, cAdvisor :8080 y Node Exporter :9100", "PostgreSQL y las herramientas de observabilidad requieren volúmenes persistentes"] },
+    { "dot": "amber", "title": "Cómo despliega Coolify desde GitHub", "items": ["La GitHub App configurada como source en Coolify queda asociada al repositorio y rama seleccionados", "GitHub envía el evento de push al webhook de la integración; la App conserva las credenciales para leer el repositorio", "La integración obtiene/clona el commit configurado y entrega el código al proceso de despliegue", "Si encuentra docker-compose.yml, Coolify interpreta frontend, API, PostgreSQL, RabbitMQ, Worker y ML, además de imágenes, builds, variables, volúmenes, redes, healthchecks y puertos", "Coolify prepara la configuración, conecta por SSH al servidor destino y ordena a Docker construir o descargar imágenes y levantar todos los servicios de la red Docker de aplicación", "GitHub Actions no forma parte de este flujo principal; solo sería una alternativa externa para construir una imagen y disparar un Deploy Webhook"] },
+    { "dot": "violet", "title": "Qué monitorea cada componente", "items": ["cAdvisor no monitorea Docker como aplicación: expone métricas de CPU, memoria, red, filesystem y estado de cada contenedor; Prometheus las recopila", "Node Exporter no monitorea contenedores: expone métricas del VPS anfitrión, como CPU, memoria, disco, filesystem y red", "Grafana Alloy lee logs de los contenedores mediante el socket Docker y los envía a Loki", "Loki almacena e indexa los logs; Grafana consulta Loki para mostrarlos junto con las métricas de Prometheus", "Si Alloy permanece en Restarting, los paneles de logs quedarán incompletos aunque Grafana esté disponible", "Validar salud, volúmenes, reglas de scraping y retención antes de ejecutar k6"] }
+  ]
+}

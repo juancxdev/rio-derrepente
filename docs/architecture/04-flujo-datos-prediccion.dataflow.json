@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Flujo de datos de tickets y predicción de afluencia",
+    "viewBox": [1070, 760],
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "capture", "label": "Venta y persistencia", "focus": ["operator", "api", "tickets"], "note": "Cada ticket vendido presencialmente representa una visita real." },
+      { "id": "async-model", "label": "Cierre y modelo", "focus": ["tickets", "worker", "queue", "ml", "meteo", "predictions"], "note": "El Worker consolida los datos diarios y solicita el reentrenamiento con clima." },
+      { "id": "serve", "label": "Consulta de demanda", "focus": ["predictions", "dashboard"], "note": "El dashboard recibe cantidad estimada y puntuación calculadas previamente." }
+    ]
+  },
+  "stages": [
+    { "label": "Venta" },
+    { "label": "API" },
+    { "label": "Tickets" },
+    { "label": "Cierre diario" },
+    { "label": "Modelo y consulta" }
+  ],
+  "nodes": [
+    { "id": "operator", "type": "external", "label": "Encargado", "sublabel": "venta presencial", "stage": 0, "row": 0 },
+    { "id": "api", "type": "backend", "label": "API Go", "sublabel": "vende y valida", "stage": 1, "row": 0 },
+    { "id": "tickets", "type": "database", "label": "tickets", "sublabel": "visitas reales", "stage": 2, "row": 0, "tag": "PostgreSQL" },
+    { "id": "worker", "type": "backend", "label": "Worker Go", "sublabel": "cierre diario", "stage": 3, "row": 0 },
+    { "id": "meteo", "type": "cloud", "label": "Open-Meteo", "sublabel": "clima diario", "stage": 3, "row": 2 },
+    { "id": "queue", "type": "messagebus", "label": "Cierre diario", "sublabel": "daily-closure", "stage": 4, "row": 0, "width": 166, "tag": "RabbitMQ" },
+    { "id": "ml", "type": "backend", "label": "Servicio ML", "sublabel": "XGBoost diario", "stage": 4, "row": 2 },
+    { "id": "predictions", "type": "database", "label": "predictions", "sublabel": "estimación y score", "stage": 4, "row": 3, "tag": "PostgreSQL" },
+    { "id": "dashboard", "type": "frontend", "label": "Dashboard", "sublabel": "consulta vía API", "stage": 4, "row": 4 }
+  ],
+  "flows": [
+    { "from": "operator", "to": "api", "label": "venta", "classification": "dato operativo", "variant": "emphasis", "route": "straight", "labelDy": -24 },
+    { "from": "api", "to": "tickets", "label": "ticket vendido", "classification": "visita real", "variant": "emphasis", "route": "straight", "labelDy": -24 },
+    { "from": "tickets", "to": "worker", "label": "ventas del día", "classification": "consolidación", "variant": "default", "route": "straight", "labelDy": -24 },
+    { "from": "meteo", "to": "worker", "label": "clima", "classification": "API externa", "variant": "default", "route": "vertical-channel", "labelDy": 24, "labelDx": -52 },
+    { "from": "worker", "to": "queue", "label": "evento", "classification": "asíncrono", "variant": "dashed", "route": "straight", "labelDy": -24 },
+    { "from": "queue", "to": "ml", "label": "trabajo", "classification": "durable", "variant": "emphasis", "route": "vertical-channel", "labelDy": 24, "labelDx": 76 },
+    { "from": "ml", "to": "predictions", "label": "estimación y score", "classification": "resultado", "variant": "emphasis", "route": "vertical-channel", "labelDy": 24, "labelDx": 84 },
+    { "from": "predictions", "to": "dashboard", "label": "demanda estimada", "classification": "consulta vía API", "variant": "emphasis", "route": "vertical-channel", "labelDy": 22 }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "Fuentes de datos", "items": ["Las visitas diarias forman el histórico que alimenta el modelo", "Open-Meteo aporta variables meteorológicas", "Cada pronóstico conserva fecha y fuente para trazabilidad"] },
+    { "dot": "cyan", "title": "Desacoplamiento", "items": ["La cola separa el registro operativo del cálculo", "El modelo puede reintentarse sin perder la visita original", "La lectura del dashboard no depende de una llamada al worker"] },
+    { "dot": "amber", "title": "Resultado consultable", "items": ["La tabla predictions contiene visitantes estimados y score", "La versión del modelo queda registrada", "La interfaz recibe el resultado persistido mediante el API"] }
+  ]
+}
