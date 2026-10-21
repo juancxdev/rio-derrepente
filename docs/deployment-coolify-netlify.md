@@ -8,14 +8,15 @@
 - Coolify ejecuta `docker-compose.coolify.yml` y descarga las imágenes ya construidas.
 - PostgreSQL y RabbitMQ permanecen dentro de Coolify.
 
-## Secrets de GitHub
+## Netlify
 
-Configura:
+Netlify se conecta directamente al repositorio de GitHub y ejecuta el build mediante `netlify.toml`. No se necesitan `NETLIFY_AUTH_TOKEN`, `NETLIFY_SITE_ID` ni una GitHub Action para Netlify.
 
-- `NETLIFY_AUTH_TOKEN`: token personal de Netlify.
-- `NETLIFY_SITE_ID`: ID del sitio Netlify.
-- `VITE_API_BASE_URL`: URL pública de la API, incluyendo protocolo y puerto si aplica.
-- `COOLIFY_DEPLOY_WEBHOOK`: webhook de despliegue del recurso en Coolify.
+En las variables de entorno del sitio Netlify configura solamente:
+
+```env
+VITE_API_BASE_URL=http://IP_DEL_VPS:12001
+```
 
 `GITHUB_TOKEN` es proporcionado automáticamente por GitHub Actions y publica las imágenes en GHCR.
 
@@ -44,6 +45,21 @@ docker compose -f docker-compose.coolify.yml --profile tools run --rm migrate
 ```
 
 Conserva el volumen `postgres_data`. Nunca uses `down -v` en producción.
+
+## Actualización de Coolify
+
+El workflow `publish-and-deploy.yml` construye y publica las imágenes. El recurso de Coolify debe usar el webhook de despliegue generado en su configuración.
+
+Configura estos secrets en GitHub Actions:
+
+```text
+COOLIFY_WEBHOOK
+COOLIFY_TOKEN
+```
+
+En Coolify selecciona **Advanced → Deployment → Auto deploy → Manual deployments only**. El vínculo con GitHub se conserva, pero Coolify deja de desplegar inmediatamente al detectar el commit. GitHub Actions lo notifica después de que las imágenes se publican correctamente.
+
+No agregues además un webhook de push del repositorio para este recurso: eso provocaría despliegues duplicados y podría hacer que Coolify descargue la imagen anterior.
 
 ## Monitoreo bajo demanda
 

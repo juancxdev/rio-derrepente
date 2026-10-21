@@ -60,5 +60,11 @@ jobs:
           cache-from: type=gha,scope=ml
           cache-to: type=gha,mode=max,scope=ml
       - name: Refresh Coolify deployment
-        if: ${{ secrets.COOLIFY_DEPLOY_WEBHOOK != '' }}
-        run: curl --fail --silent --show-error --retry 3 -X POST "${{ secrets.COOLIFY_DEPLOY_WEBHOOK }}"
+        if: ${{ env.COOLIFY_WEBHOOK != '' && env.COOLIFY_TOKEN != '' }}
+        env:
+          COOLIFY_WEBHOOK: ${{ secrets.COOLIFY_WEBHOOK }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        run: |
+          curl --fail --silent --show-error --retry 3 \
+            --request POST "$COOLIFY_WEBHOOK" \
+            --header "Authorization: Bearer $COOLIFY_TOKEN"
