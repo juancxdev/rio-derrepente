@@ -20,11 +20,6 @@ services:
         condition: service_healthy
     volumes:
       - ./db/migrations:/migrations:ro
-    entrypoint: ["/bin/sh", "-c"]
-    command: >-
-      migrate -path=/migrations
-      -database=postgres://${POSTGRES_USER:-tourism}:${POSTGRES_PASSWORD:-tourism}@postgres:5432/${POSTGRES_DB:-tourism}?sslmode=disable
-      up && touch /tmp/migrations-complete && tail -f /dev/null
     healthcheck:
       test: ["CMD-SHELL", "test -f /tmp/migrations-complete"]
       interval: 5s
