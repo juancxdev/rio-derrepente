@@ -16,12 +16,10 @@ services:
       retries: 10
 
   migrate:
-    image: migrate/migrate:v4.18.3
+    image: ghcr.io/juancxdev/rio-derrepente-migrations:latest
     depends_on:
       postgres:
         condition: service_healthy
-    volumes:
-      - ./db/migrations:/migrations:ro
     entrypoint: ["migrate"]
     command: ["-path=/migrations", "-database=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable", "up"]
 

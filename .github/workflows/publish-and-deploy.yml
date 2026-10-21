@@ -55,6 +55,14 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/rio-derrepente-ml:latest
             ghcr.io/${{ github.repository_owner }}/rio-derrepente-ml:${{ github.sha }}
+      - name: Publish migrations image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./db
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/rio-derrepente-migrations:latest
+            ghcr.io/${{ github.repository_owner }}/rio-derrepente-migrations:${{ github.sha }}
       - name: Refresh Coolify deployment
         if: ${{ env.COOLIFY_WEBHOOK != '' && env.COOLIFY_TOKEN != '' }}
         env:
