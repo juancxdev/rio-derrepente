@@ -17,7 +17,6 @@ services:
 
   migrate:
     image: migrate/migrate:v4.18.3
-    profiles: ["tools"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -61,6 +60,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "${API_HOST_PORT:-12001}:8080"
     healthcheck:
@@ -85,6 +86,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   ml-service:
     image: ghcr.io/juancxdev/rio-derrepente-ml:latest
@@ -99,6 +102,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"]
       interval: 15s

@@ -15,7 +15,6 @@ services:
 
   migrate:
     image: migrate/migrate:v4.18.3
-    profiles: ["tools"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -81,6 +80,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "${API_HOST_PORT:-12001}:${API_PORT:-8080}"
     healthcheck:
@@ -102,6 +103,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "${ML_HOST_PORT:-12002}:8000"
     healthcheck:
@@ -126,6 +129,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "grep -aq tourism-worker /proc/1/cmdline || exit 1"]
       interval: 10s
