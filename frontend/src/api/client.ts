@@ -1,5 +1,10 @@
 let authToken: string | null = null;
 let unauthorizedHandler: (() => void) | null = null;
+const apiBaseURL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
+
+function requestURL(path: string): string {
+  return `${apiBaseURL}${path}`;
+}
 
 export function setAuthToken(value: string | null) {
   authToken = value;
@@ -36,7 +41,7 @@ export async function apiFetch(path: string, init: ApiInit = {}): Promise<Respon
 
   let response: Response;
   try {
-    response = await fetch(path, { ...request, headers });
+    response = await fetch(requestURL(path), { ...request, headers });
   } catch {
     throw new ApiError(0, 'network_error', 'No pudimos conectar con el servicio. Revisa tu conexión e inténtalo nuevamente.');
   }

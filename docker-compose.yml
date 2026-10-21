@@ -75,6 +75,7 @@ services:
       DEMO_USER_NAME: ${DEMO_USER_NAME:-Operador de demostración}
       DEMO_USER_ROLE: ${DEMO_USER_ROLE:-manager}
       APP_ENABLE_LEGACY_ROUTES: ${APP_ENABLE_LEGACY_ROUTES:-false}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:3000}
     depends_on:
       postgres:
         condition: service_healthy

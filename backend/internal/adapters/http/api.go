@@ -6,11 +6,13 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/google/uuid"
 	"github.com/juancx/tourism-platform/backend/internal/adapters/postgres"
 	"github.com/juancx/tourism-platform/backend/internal/adapters/weather"
@@ -89,6 +91,15 @@ func New(register application.RegisterVisitService, getPrediction application.Ge
 
 func (a *API) App() *fiber.App {
 	app := fiber.New(fiber.Config{ErrorHandler: a.errorHandler})
+	allowedOrigins := strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS"))
+	if allowedOrigins == "" {
+		allowedOrigins = "http://localhost:5173,http://localhost:3000"
+	}
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: allowedOrigins,
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization, Idempotency-Key",
+		AllowMethods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+	}))
 	app.Use(func(c *fiber.Ctx) error {
 		started := time.Now()
 		err := c.Next()
