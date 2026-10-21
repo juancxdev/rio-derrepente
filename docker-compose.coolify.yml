@@ -20,8 +20,16 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    entrypoint: ["migrate"]
-    command: ["-path=/migrations", "-database=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable", "up"]
+    entrypoint: ["/bin/sh", "-c"]
+    command: >-
+      migrate -path=/migrations
+      -database=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      up && touch /tmp/migrations-complete && tail -f /dev/null
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/migrations-complete"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
@@ -59,7 +67,7 @@ services:
       rabbitmq:
         condition: service_healthy
       migrate:
-        condition: service_completed_successfully
+        condition: service_healthy
     ports:
       - "${API_HOST_PORT:-12001}:8080"
     healthcheck:
@@ -85,7 +93,7 @@ services:
       rabbitmq:
         condition: service_healthy
       migrate:
-        condition: service_completed_successfully
+        condition: service_healthy
 
   ml-service:
     image: ghcr.io/juancxdev/rio-derrepente-ml:latest
@@ -101,7 +109,7 @@ services:
       rabbitmq:
         condition: service_healthy
       migrate:
-        condition: service_completed_successfully
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"]
       interval: 15s
