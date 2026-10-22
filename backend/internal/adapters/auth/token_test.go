@@ -47,3 +47,18 @@ func TestTokenSignedWithAnotherSecretIsRejected(t *testing.T) {
 		t.Fatalf("want invalid token, got %v", err)
 	}
 }
+
+func TestRefreshTokenCarriesRefreshPurpose(t *testing.T) {
+	manager := TokenManager{Secret: []byte("test-secret")}
+	token, err := manager.IssueRefresh(identity.Claims{UserID: uuid.New(), TenantID: uuid.New(), Role: identity.RoleManager}, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := manager.Parse(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claims.Purpose != PurposeRefresh {
+		t.Fatalf("want refresh purpose, got %q", claims.Purpose)
+	}
+}

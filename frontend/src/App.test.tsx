@@ -65,6 +65,7 @@ type ApiOptions = {
   ticketsStatus?: number;
   failSummary?: boolean;
   pendingSummary?: boolean;
+  refreshSession?: boolean;
 };
 
 function installApi(options: ApiOptions = {}) {
@@ -74,6 +75,9 @@ function installApi(options: ApiOptions = {}) {
     if (url.endsWith('/api/v1/auth/login')) {
       if (options.loginStatus) return json({ error: { code: 'invalid_credentials', message: 'Correo o contraseña incorrectos.' } }, options.loginStatus);
       return json(session(options.sites));
+    }
+    if (url.endsWith('/api/v1/auth/refresh')) {
+      return options.refreshSession ? json(session(options.sites)) : json({ error: { code: 'refresh_required', message: 'Sesión no disponible.' } }, 401);
     }
     if (url.endsWith('/api/v1/auth/logout')) return new Response(null, { status: 204 });
     if (url.includes('/tickets')) {
@@ -115,6 +119,13 @@ afterEach(() => {
 });
 
 describe('authentication gate', () => {
+  it('restores the session after a page reload using the refresh cookie', async () => {
+    installApi({ refreshSession: true });
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Resumen operativo' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Inicia sesión' })).toBeNull();
+  });
+
   it('shows neutral platform branding instead of a tenant brand', () => {
     installApi();
     render(<App />);

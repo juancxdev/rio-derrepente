@@ -121,7 +121,7 @@ func (w *coordinatesWeather) Historical(_ context.Context, latitude, longitude f
 type passwordStub struct{}
 
 func (passwordStub) Hash(plain string) (string, error) { return "hash:" + plain, nil }
-func (passwordStub) Verify(hash, plain string) bool   { return hash == "hash:"+plain }
+func (passwordStub) Verify(hash, plain string) bool    { return hash == "hash:"+plain }
 
 type identityStub struct {
 	user       identity.User
@@ -155,13 +155,13 @@ func (s identityStub) UpsertUser(_ context.Context, user identity.User) (identit
 func (s identityStub) UpsertMembership(context.Context, identity.Membership) error { return nil }
 
 type authFixture struct {
-	app      *fiber.App
+	app       *fiber.App
 	ticketing *ticketingScopeStub
-	tokens   authadapter.TokenManager
-	userID   uuid.UUID
-	tenantID uuid.UUID
-	email    string
-	password string
+	tokens    authadapter.TokenManager
+	userID    uuid.UUID
+	tenantID  uuid.UUID
+	email     string
+	password  string
 }
 
 func newAuthFixture(active bool, role identity.Role, owns bool) *authFixture {
@@ -221,6 +221,35 @@ func TestLoginReturnsUserTenantAndSites(t *testing.T) {
 	body := decodeBody(t, res)
 	if !strings.Contains(body, "access_token") || !strings.Contains(body, "Operador turístico") || !strings.Contains(body, "closure_hour") {
 		t.Fatalf("session response is incomplete: %s", body)
+	}
+	if len(res.Cookies()) == 0 || res.Cookies()[0].Name != refreshCookieName {
+		t.Fatal("login must issue an HttpOnly refresh cookie")
+	}
+}
+
+func TestRefreshRebuildsTheSessionFromCookie(t *testing.T) {
+	f := newAuthFixture(true, identity.RoleManager, true)
+	login := f.do(http.MethodPost, "/api/v1/auth/login", `{"email":"`+f.email+`","password":"`+f.password+`"}`, "")
+	if login.StatusCode != http.StatusOK || len(login.Cookies()) == 0 {
+		t.Fatalf("login did not issue refresh cookie: %d", login.StatusCode)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", nil)
+	refreshCookie := login.Cookies()[0]
+	req.AddCookie(refreshCookie)
+	res, err := f.app.Test(req, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusOK || !strings.Contains(decodeBody(t, res), "access_token") {
+		t.Fatalf("want refreshed session, got %d", res.StatusCode)
+	}
+}
+
+func TestLogoutClearsTheRefreshCookie(t *testing.T) {
+	f := newAuthFixture(true, identity.RoleManager, true)
+	res := f.do(http.MethodPost, "/api/v1/auth/logout", "", f.token(t))
+	if res.StatusCode != http.StatusNoContent || len(res.Cookies()) == 0 || res.Cookies()[0].Expires.Unix() != 1 {
+		t.Fatalf("logout must clear refresh cookie: status=%d cookies=%v", res.StatusCode, res.Cookies())
 	}
 }
 
