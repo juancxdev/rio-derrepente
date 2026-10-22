@@ -117,7 +117,16 @@ func (s AuthService) Session(ctx context.Context, userID, tenantID uuid.UUID) (S
 	if user.IsSuperAdmin {
 		return s.superAdminSession(user, "")
 	}
-	session := Session{User: user, Tenant: tenant}
+	token, err := s.tokens.Issue(identity.Claims{
+		UserID:    user.ID,
+		TenantID:  tenant.TenantID,
+		Role:      tenant.Role,
+		ExpiresAt: time.Now().Add(s.tokenTTL).Unix(),
+	})
+	if err != nil {
+		return Session{}, err
+	}
+	session := Session{User: user, Tenant: tenant, AccessToken: token}
 	if s.sites != nil {
 		session.Sites, err = s.sites.ListSites(ctx, tenantID)
 		if err != nil {

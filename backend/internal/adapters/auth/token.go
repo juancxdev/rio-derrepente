@@ -87,6 +87,9 @@ func (m TokenManager) Parse(value string) (identity.Claims, error) {
 }
 
 func (m TokenManager) IssueRefresh(claims identity.Claims, ttl time.Duration) (string, error) {
+	if ttl <= 0 {
+		ttl = 30 * 24 * time.Hour
+	}
 	claims.Purpose = PurposeRefresh
 	claims.ExpiresAt = time.Now().Add(ttl).Unix()
 	return m.Issue(claims)

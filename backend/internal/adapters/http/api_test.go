@@ -235,6 +235,9 @@ func TestRefreshRebuildsTheSessionFromCookie(t *testing.T) {
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", nil)
 	refreshCookie := login.Cookies()[0]
+	if claims, parseErr := f.tokens.Parse(refreshCookie.Value); parseErr != nil || claims.Purpose != authadapter.PurposeRefresh {
+		t.Fatalf("issued cookie is not a refresh token: value=%q claims=%+v err=%v", refreshCookie.Value, claims, parseErr)
+	}
 	req.AddCookie(refreshCookie)
 	res, err := f.app.Test(req, -1)
 	if err != nil {
