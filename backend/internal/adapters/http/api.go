@@ -44,6 +44,7 @@ type API struct {
 	tokens            application.TokenService
 	legacyRoutes      bool
 	closureHour       int
+	refreshTTL        time.Duration
 }
 
 func (a *API) WithTicketing(s application.TicketingService) *API { a.ticketing = &s; return a }
@@ -72,6 +73,14 @@ func (a *API) WithClosureHour(hour int) *API {
 	return a
 }
 
+func (a *API) WithRefreshTTL(ttl time.Duration) *API {
+	if ttl <= 0 {
+		ttl = 30 * 24 * time.Hour
+	}
+	a.refreshTTL = ttl
+	return a
+}
+
 type WeatherProvider interface {
 	Forecasts(context.Context, float64, float64, time.Time, int) ([]weather.Forecast, error)
 	Historical(context.Context, float64, float64, time.Time, int) ([]weather.Forecast, error)
@@ -96,9 +105,10 @@ func (a *API) App() *fiber.App {
 		allowedOrigins = "http://localhost:5173,http://localhost:3000"
 	}
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: allowedOrigins,
-		AllowHeaders: "Origin, Content-Type, Accept, Authorization, Idempotency-Key",
-		AllowMethods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+		AllowOrigins:     allowedOrigins,
+		AllowCredentials: true,
+		AllowHeaders:     "Origin, Content-Type, Accept, Authorization, Idempotency-Key",
+		AllowMethods:     "GET,POST,PUT,PATCH,DELETE,OPTIONS",
 	}))
 	app.Use(func(c *fiber.Ctx) error {
 		started := time.Now()
@@ -109,6 +119,7 @@ func (a *API) App() *fiber.App {
 	app.Get("/health", func(c *fiber.Ctx) error { return c.JSON(fiber.Map{"status": "ok", "service": "tourism-api"}) })
 
 	app.Post("/api/v1/auth/login", a.login)
+	app.Post("/api/v1/auth/refresh", a.refresh)
 	auth := app.Group("/api/v1/auth", a.RequireAuth())
 	auth.Get("/me", a.me)
 	auth.Post("/logout", a.logout)

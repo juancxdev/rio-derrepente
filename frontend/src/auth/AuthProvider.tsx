@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { login as loginRequest, logout as logoutRequest } from '../api/auth';
+import { login as loginRequest, logout as logoutRequest, refreshSession } from '../api/auth';
 import { setAuthToken, setUnauthorizedHandler } from '../api/client';
 import type { SessionResponse } from '../types';
 
@@ -18,14 +18,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<SessionResponse | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  useEffect(() => {
-    setUnauthorizedHandler(() => {
-      setAuthToken(null);
-      setSession(null);
-      setNotice('La sesión venció. Inicia sesión nuevamente para continuar.');
-    });
-    return () => setUnauthorizedHandler(null);
+  const restoreSession = useCallback(async (): Promise<boolean> => {
+    try {
+      const next = await refreshSession();
+      setAuthToken(next.access_token ?? null);
+      setSession(next);
+      setNotice(null);
+      return true;
+    } catch {
+      return false;
+    }
   }, []);
+
+  useEffect(() => {
+    setUnauthorizedHandler(async () => {
+      const restored = await restoreSession();
+      if (!restored) {
+        setAuthToken(null);
+        setSession(null);
+        setNotice('La sesión venció. Inicia sesión nuevamente para continuar.');
+      }
+      return restored;
+    });
+    void restoreSession();
+    return () => setUnauthorizedHandler(null);
+  }, [restoreSession]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     const next = await loginRequest(email, password);
@@ -35,7 +52,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(() => {
-    // The token is stateless and lives in memory; discarding it is enough.
     void logoutRequest().catch(() => undefined);
     setAuthToken(null);
     setSession(null);

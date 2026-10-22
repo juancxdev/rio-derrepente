@@ -109,4 +109,5 @@ type Claims struct {
 	TenantID  uuid.UUID
 	Role      Role
 	ExpiresAt int64
+	Purpose   string
 }

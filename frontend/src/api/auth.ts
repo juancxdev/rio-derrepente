@@ -13,6 +13,10 @@ export async function fetchSession(): Promise<SessionResponse> {
   return apiJSON<SessionResponse>('/api/v1/auth/me');
 }
 
+export async function refreshSession(): Promise<SessionResponse> {
+  return apiJSON<SessionResponse>('/api/v1/auth/refresh', { method: 'POST', skipUnauthorizedHandler: true });
+}
+
 export async function logout(): Promise<void> {
   await apiNoContent('/api/v1/auth/logout', { method: 'POST', skipUnauthorizedHandler: true });
 }

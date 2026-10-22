@@ -38,6 +38,7 @@ bind="${MONITORING_BIND_ADDRESS:-$(env_file_value MONITORING_BIND_ADDRESS)}"
 bind="${bind:-127.0.0.1}"
 grafana_port="${MONITORING_GRAFANA_PORT:-$(env_file_value MONITORING_GRAFANA_PORT)}"
 grafana_port="${grafana_port:-13000}"
+k6_output="${K6_OUTPUT:-none}"
 
 script="${1:-load-health.js}"
 shift || true
@@ -58,6 +59,15 @@ printf '  API:    %s\n' "$api_base_url"
 printf '  Health: %s\n' "$base_url"
 printf 'Dashboard: http://%s:%s/d/afluencia-k6\n\n' "$bind" "$grafana_port"
 
+run_args=(run)
+if [ "$k6_output" != "none" ]; then
+  run_args+=(--out "$k6_output")
+fi
+run_args+=("$script_path")
+run_args+=("$@")
+
+# k6 se ejecuta como contenedor temporal; no levanta Grafana, Prometheus ni
+# ninguna otra dependencia local. Para enviar métricas a Prometheus usa:
+# K6_OUTPUT=experimental-prometheus-rw
 docker compose --env-file "$ENV_FILE" -f docker-compose.monitoring.yml \
-  --profile loadtest run --rm k6 \
-  run --out experimental-prometheus-rw "$script_path" "$@"
+  --profile loadtest run --rm --no-deps k6 "${run_args[@]}"

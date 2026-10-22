@@ -88,6 +88,7 @@ func main() {
 		WithAuth(authService, tokens).
 		WithLegacyRoutes(env("APP_ENABLE_LEGACY_ROUTES", "false") == "true").
 		WithClosureHour(envInt("CLOSURE_HOUR", 18)).
+		WithRefreshTTL(envDuration("AUTH_REFRESH_TTL", 30*24*time.Hour)).
 		App()
 
 	logger.Info("api_started", "port", env("API_PORT", "8080"))

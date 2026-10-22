@@ -26,7 +26,6 @@ export function UserMenu() {
       <div className="user-menu__identity">
         <span className="user-menu__avatar" aria-hidden="true">{initials(user.display_name) || 'OP'}</span>
         <span className="user-menu__text">
-          <b>{user.display_name}</b>
           <span>{user.email}</span>
           <em>{role ? roleLabel[role] : 'Sin rol'}</em>
         </span>

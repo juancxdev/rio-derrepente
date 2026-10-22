@@ -120,7 +120,7 @@ export function LoginPage() {
             </Button>
           </form>
 
-          <p className="login-footnote">Sesión local con token firmado y expiración. Al recargar la página se solicita un nuevo inicio de sesión.</p>
+          <p className="login-footnote">Sesión protegida con renovación automática. Solo se cierra al salir o cuando vence la sesión.</p>
           {import.meta.env.DEV ? (
             <p className="login-demo-hint">
               No hay contraseñas por defecto. Crea o rota el acceso inicial con <code>adminctl create-superadmin</code>.

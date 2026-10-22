@@ -3,6 +3,7 @@ import {
   Buildings,
   CaretLeft,
   CaretRight,
+  ChartLineUp,
   List,
   MapPin,
   Plus,
@@ -38,9 +39,10 @@ import { UserMenu } from '../components/UserMenu';
 import { useTenant } from '../tenant/TenantContext';
 import type { PlatformAccount, PlatformTenant, Role, Site } from '../types';
 
-type Tab = 'operators' | 'sites' | 'accounts';
+type Tab = 'summary' | 'operators' | 'sites' | 'accounts';
 
 const tabs: Array<{ id: Tab; label: string; icon: typeof Buildings }> = [
+  { id: 'summary', label: 'Resumen', icon: ChartLineUp },
   { id: 'operators', label: 'Operadores', icon: Buildings },
   { id: 'sites', label: 'Destinos', icon: MapPin },
   { id: 'accounts', label: 'Cuentas', icon: UsersThree },
@@ -71,7 +73,15 @@ function platformError(error: unknown, fallback: string): string {
   return errorMessage(error, fallback);
 }
 
-function PlatformShell({ tab, onTab, children }: { tab: Tab; onTab: (tab: Tab) => void; children: ReactNode }) {
+function PlatformShell({
+  tab,
+  onTab,
+  children,
+}: {
+  tab: Tab;
+  onTab: (tab: Tab) => void;
+  children: ReactNode;
+}) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -144,11 +154,6 @@ function PlatformShell({ tab, onTab, children }: { tab: Tab; onTab: (tab: Tab) =
             <button ref={closeButtonRef} className="sidebar-close" type="button" aria-label="Cerrar navegación" onClick={() => setDrawerOpen(false)}>
               <X size={20} aria-hidden="true" />
             </button>
-          </div>
-
-          <div className="platform-badge">
-            <ShieldCheck size={18} weight="duotone" aria-hidden="true" />
-            <span>Super administrador</span>
           </div>
 
           <nav className="sidebar-nav" aria-label="Secciones de plataforma">
@@ -227,12 +232,17 @@ export function PlatformConsole() {
   useEffect(() => { void loadSites(selectedTenantID); }, [selectedTenantID]);
 
   return (
-    <PlatformShell tab={tab} onTab={setTab}>
+    <PlatformShell
+      tab={tab}
+      onTab={setTab}
+    >
       <PageHeader
         eyebrow="Administración de plataforma"
-        title={tab === 'operators' ? 'Operadores' : tab === 'sites' ? 'Destinos' : 'Cuentas'}
+        title={tab === 'summary' ? 'Resumen' : tab === 'operators' ? 'Operadores' : tab === 'sites' ? 'Destinos' : 'Cuentas'}
         description={
-          tab === 'operators'
+          tab === 'summary'
+            ? 'Vista general de los operadores, destinos y cuentas de la plataforma.'
+            : tab === 'operators'
             ? 'Crea y revisa los operadores turísticos de la plataforma.'
             : tab === 'sites'
               ? 'Cada destino pertenece a un operador y se usa para ventas, clima y predicciones.'
@@ -252,12 +262,15 @@ export function PlatformConsole() {
         </div>
       ) : (
         <>
-          <div className="metric-row">
-            <Metric label="Operadores" value={tenants.length} hint="Tenants registrados" tone="accent" />
-            <Metric label="Destinos" value={tenants.reduce((total, tenant) => total + tenant.sites, 0)} hint="En todos los operadores" />
-            <Metric label="Cuentas" value={accounts.length} hint="Incluye al super administrador" />
-          </div>
+          {tab === 'summary' ? (
+            <div className="metric-row">
+              <Metric label="Operadores" value={tenants.length} hint="Tenants registrados" tone="accent" />
+              <Metric label="Destinos" value={tenants.reduce((total, tenant) => total + tenant.sites, 0)} hint="En todos los operadores" />
+              <Metric label="Cuentas" value={accounts.length} hint="Incluye al super administrador" />
+            </div>
+          ) : null}
 
+          {tab === 'summary' ? <PlatformSummary tenants={tenants} accounts={accounts} /> : null}
           {tab === 'operators' ? <OperatorsPanel tenants={tenants} loading={loading} onReload={loadBase} onSelect={(id) => { setSelectedTenantID(id); setTab('sites'); }} onNotice={setNotice} /> : null}
           {tab === 'sites' ? <SitesPanel tenants={tenants} selectedTenantID={selectedTenantID} onSelectTenant={setSelectedTenantID} sites={sites} loading={sitesLoading} onReload={async () => { await loadSites(selectedTenantID); await loadBase(); }} onNotice={setNotice} /> : null}
           {tab === 'accounts' ? <AccountsPanel tenants={tenants} accounts={accounts} onReload={loadBase} onNotice={setNotice} /> : null}
@@ -269,11 +282,48 @@ export function PlatformConsole() {
   );
 }
 
+function PlatformSummary({ tenants, accounts }: { tenants: PlatformTenant[]; accounts: PlatformAccount[] }) {
+  return (
+    <div className="platform-grid">
+      <Card>
+        <div className="card-heading">
+          <div><h2>Operación de la plataforma</h2><p>Administra la estructura global sin cambiar el contexto de un destino.</p></div>
+          <Badge tone="accent">Multitenant</Badge>
+        </div>
+        {tenants.length === 0 ? <EmptyState title="Aún no hay operadores" description="Crea el primer operador desde la sección Operadores." /> : (
+          <div className="summary-list">
+            {tenants.map((tenant) => (
+              <div className="summary-list__row" key={tenant.id}>
+                <span className="cell-stack"><b>{tenant.name}</b><small>{tenant.sites} {tenant.sites === 1 ? 'destino' : 'destinos'}</small></span>
+                <span className="summary-list__value">{tenant.accounts} cuentas</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+      <Card>
+        <div className="card-heading"><div><h2>Acceso</h2><p>Resumen de cuentas registradas y sus permisos.</p></div></div>
+        <div className="summary-note">
+          <strong>{accounts.length}</strong>
+          <span>cuentas disponibles en la plataforma</span>
+        </div>
+        <p className="platform-footnote">La gestión detallada está disponible en Cuentas y acceso.</p>
+      </Card>
+    </div>
+  );
+}
+
 function OperatorsPanel({ tenants, loading, onReload, onSelect, onNotice }: { tenants: PlatformTenant[]; loading: boolean; onReload: () => Promise<void>; onSelect: (id: string) => void; onNotice: (message: string) => void }) {
   const [form, setForm] = useState<TenantForm>({ name: '' });
+  const [query, setQuery] = useState('');
   const [validation, setValidation] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const filteredTenants = tenants.filter((tenant) => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return !normalizedQuery || tenant.name.toLowerCase().includes(normalizedQuery) || tenant.id.toLowerCase().includes(normalizedQuery);
+  });
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -304,6 +354,11 @@ function OperatorsPanel({ tenants, loading, onReload, onSelect, onNotice }: { te
           <div><h2>Operadores turísticos</h2><p>Cada operador es un tenant con sus propios destinos y cuentas.</p></div>
           <Badge tone="accent">{tenants.length} {tenants.length === 1 ? 'operador' : 'operadores'}</Badge>
         </div>
+        <div className="operator-filter">
+          <Field label="Buscar operador" htmlFor="platform-operator-search">
+            <Input id="platform-operator-search" value={query} placeholder="Nombre o identificador" onChange={(event) => setQuery(event.target.value)} />
+          </Field>
+        </div>
         <DataTable
           caption="Operadores turísticos de la plataforma"
           columns={[
@@ -312,7 +367,7 @@ function OperatorsPanel({ tenants, loading, onReload, onSelect, onNotice }: { te
             { key: 'accounts', header: 'Cuentas', align: 'end', render: (tenant) => tenant.accounts },
             { key: 'actions', header: '', render: (tenant) => <Button size="sm" variant="ghost" onClick={() => onSelect(tenant.id)}>Ver destinos</Button> },
           ]}
-          rows={tenants}
+          rows={filteredTenants}
           rowKey={(tenant) => tenant.id}
           empty={<EmptyState icon={Buildings} title="Sin operadores todavía" description="Crea el primer operador para habilitar sus destinos y cuentas." />}
         />

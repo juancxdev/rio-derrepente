@@ -22,6 +22,8 @@ type TokenManager struct {
 	Issuer string
 }
 
+const PurposeRefresh = "refresh"
+
 func (m TokenManager) Issue(claims identity.Claims) (string, error) {
 	now := time.Now()
 	expires := claims.ExpiresAt
@@ -43,6 +45,7 @@ func (m TokenManager) Issue(claims identity.Claims) (string, error) {
 		"iss":       issuer,
 		"iat":       now.Unix(),
 		"exp":       expires,
+		"purpose":   claims.Purpose,
 	})
 	return token.SignedString(m.Secret)
 }
@@ -80,7 +83,13 @@ func (m TokenManager) Parse(value string) (identity.Claims, error) {
 	if err != nil || exp == nil {
 		return identity.Claims{}, ErrTokenInvalid
 	}
-	return identity.Claims{UserID: userID, TenantID: tenantID, Role: role, ExpiresAt: exp.Unix()}, nil
+	return identity.Claims{UserID: userID, TenantID: tenantID, Role: role, ExpiresAt: exp.Unix(), Purpose: claimString(claims, "purpose")}, nil
+}
+
+func (m TokenManager) IssueRefresh(claims identity.Claims, ttl time.Duration) (string, error) {
+	claims.Purpose = PurposeRefresh
+	claims.ExpiresAt = time.Now().Add(ttl).Unix()
+	return m.Issue(claims)
 }
 
 func claimString(claims jwt.MapClaims, key string) string {

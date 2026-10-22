@@ -2,7 +2,9 @@ package httpadapter
 
 import (
 	"errors"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -27,6 +29,35 @@ type sessionResponse struct {
 	Tenant      identity.Membership `json:"tenant"`
 	Sites       []sites.Site        `json:"sites"`
 	ClosureHour int                 `json:"closure_hour"`
+}
+
+const refreshCookieName = "afluencia_refresh"
+
+type refreshTokenIssuer interface {
+	IssueRefresh(identity.Claims, time.Duration) (string, error)
+}
+
+type refreshTokenParser interface {
+	Parse(string) (identity.Claims, error)
+}
+
+func (a *API) setRefreshCookie(c *fiber.Ctx, session application.Session) error {
+	issuer, ok := a.tokens.(refreshTokenIssuer)
+	if !ok {
+		return nil
+	}
+	claims := identity.Claims{UserID: session.User.ID, TenantID: session.Tenant.TenantID, Role: session.Tenant.Role}
+	token, err := issuer.IssueRefresh(claims, a.refreshTTL)
+	if err != nil {
+		return err
+	}
+	secure := strings.EqualFold(strings.TrimSpace(os.Getenv("APP_ENV")), "production") || strings.EqualFold(strings.TrimSpace(os.Getenv("AUTH_COOKIE_SECURE")), "true")
+	c.Cookie(&fiber.Cookie{Name: refreshCookieName, Value: token, Path: "/api/v1/auth", HTTPOnly: true, Secure: secure, SameSite: "Lax", MaxAge: int(a.refreshTTL.Seconds())})
+	return nil
+}
+
+func clearRefreshCookie(c *fiber.Ctx) {
+	c.Cookie(&fiber.Cookie{Name: refreshCookieName, Value: "", Path: "/api/v1/auth", HTTPOnly: true, Expires: time.Unix(1, 0), MaxAge: -1})
 }
 
 func (a *API) sessionResponse(session application.Session) sessionResponse {
@@ -72,6 +103,35 @@ func (a *API) login(c *fiber.Ctx) error {
 	case err != nil:
 		return err
 	}
+	if err := a.setRefreshCookie(c, session); err != nil {
+		return err
+	}
+	return c.JSON(a.sessionResponse(session))
+}
+
+func (a *API) refresh(c *fiber.Ctx) error {
+	if err := a.requireAuthService(); err != nil {
+		return err
+	}
+	value := strings.TrimSpace(c.Cookies(refreshCookieName))
+	parser, ok := a.tokens.(refreshTokenParser)
+	if value == "" || !ok {
+		clearRefreshCookie(c)
+		return &authError{401, "refresh_required", "La sesión venció. Inicia sesión nuevamente."}
+	}
+	claims, err := parser.Parse(value)
+	if err != nil || claims.Purpose != auth.PurposeRefresh {
+		clearRefreshCookie(c)
+		return &authError{401, "refresh_invalid", "La sesión venció. Inicia sesión nuevamente."}
+	}
+	session, err := a.auth.Session(c.Context(), claims.UserID, claims.TenantID)
+	if err != nil {
+		clearRefreshCookie(c)
+		return &authError{401, "refresh_invalid", "La sesión ya no es válida."}
+	}
+	if err := a.setRefreshCookie(c, session); err != nil {
+		return err
+	}
 	return c.JSON(a.sessionResponse(session))
 }
 
@@ -88,9 +148,8 @@ func (a *API) me(c *fiber.Ctx) error {
 	return c.JSON(a.sessionResponse(session))
 }
 
-// Logout is intentionally stateless: the client discards the in-memory token.
-// Revocation of already signed tokens belongs to a later iteration.
 func (a *API) logout(c *fiber.Ctx) error {
+	clearRefreshCookie(c)
 	return c.SendStatus(fiber.StatusNoContent)
 }
 

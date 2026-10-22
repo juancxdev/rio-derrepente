@@ -1,5 +1,5 @@
 let authToken: string | null = null;
-let unauthorizedHandler: (() => void) | null = null;
+let unauthorizedHandler: (() => Promise<boolean>) | null = null;
 const apiBaseURL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 
 function requestURL(path: string): string {
@@ -14,7 +14,7 @@ export function getAuthToken(): string | null {
   return authToken;
 }
 
-export function setUnauthorizedHandler(handler: (() => void) | null) {
+export function setUnauthorizedHandler(handler: (() => Promise<boolean>) | null) {
   unauthorizedHandler = handler;
 }
 
@@ -36,16 +36,24 @@ export async function apiFetch(path: string, init: ApiInit = {}): Promise<Respon
   const { skipUnauthorizedHandler = false, ...request } = init;
   const headers = new Headers(request.headers);
   if (authToken) headers.set('Authorization', `Bearer ${authToken}`);
-  const isLogin = path.endsWith('/auth/login');
+  const isAuthEndpoint = path.includes('/auth/login') || path.includes('/auth/refresh');
   if (request.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
 
   let response: Response;
   try {
-    response = await fetch(requestURL(path), { ...request, headers });
+    response = await fetch(requestURL(path), { ...request, headers, credentials: 'include' });
   } catch {
     throw new ApiError(0, 'network_error', 'No pudimos conectar con el servicio. Revisa tu conexión e inténtalo nuevamente.');
   }
-  if (response.status === 401 && !isLogin && !skipUnauthorizedHandler) unauthorizedHandler?.();
+  if (response.status === 401 && !isAuthEndpoint && !skipUnauthorizedHandler && unauthorizedHandler) {
+    const restored = await unauthorizedHandler();
+    if (restored) {
+      const retryHeaders = new Headers(request.headers);
+      if (authToken) retryHeaders.set('Authorization', `Bearer ${authToken}`);
+      if (request.body && !retryHeaders.has('Content-Type')) retryHeaders.set('Content-Type', 'application/json');
+      response = await fetch(requestURL(path), { ...request, headers: retryHeaders, credentials: 'include' });
+    }
+  }
   return response;
 }
 
